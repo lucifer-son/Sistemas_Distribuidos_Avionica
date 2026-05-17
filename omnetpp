@@ -1,0 +1,115 @@
+[General]
+network = ArquiteturaAvionica
+sim-time-limit = 5s
+
+# ----------------------------------------------------
+# 1. Configurações de Interfaces e Ativação do Wi-Fi
+# ----------------------------------------------------
+# Nós que possuem placas de rádio Wi-Fi (WAIC)
+*.sensor_WAIC.numWlanInterfaces = 1
+*.sensor_pressao_motor.numWlanInterfaces = 1
+*.lider_cluster.numWlanInterfaces = 2     # Duas interfaces para falar com os dois APs
+*.accessPoint_A.numWlanInterfaces = 1
+*.accessPoint_B.numWlanInterfaces = 1
+
+# Meio Físico e Configurações de Redundância SSID
+*.radioMedium.typename = "Ieee80211ScalarRadioMedium"
+
+# Canais de rádio separados para evitar interferência mútua
+*.accessPoint_A.wlan[0].mgmt.typename = "Ieee80211MgmtAp"
+*.accessPoint_A.wlan[0].mgmt.ssid = "Canal_Principal"
+*.accessPoint_B.wlan[0].mgmt.typename = "Ieee80211MgmtAp"
+*.accessPoint_B.wlan[0].mgmt.ssid = "Canal_Redundante"
+
+# Sensores apontando para a rede local do Cluster (gerida pelo Líder)
+**.sensor_WAIC.wlan[0].mgmt.typename = "Ieee80211MgmtSta"
+**.sensor_WAIC.wlan[0].agent.defaultSsid = "Canal_Principal"
+**.sensor_pressao_motor.wlan[0].mgmt.typename = "Ieee80211MgmtSta"
+**.sensor_pressao_motor.wlan[0].agent.defaultSsid = "Canal_Principal"
+
+# Líder conectado simultaneamente aos dois caminhos aviônicos
+*.lider_cluster.wlan[0].mgmt.typename = "Ieee80211MgmtSta"
+*.lider_cluster.wlan[0].agent.defaultSsid = "Canal_Principal"
+*.lider_cluster.wlan[1].mgmt.typename = "Ieee80211MgmtSta"
+*.lider_cluster.wlan[1].agent.defaultSsid = "Canal_Redundante"
+
+# Autoconfiguração Globals e Prevenção de Erros de Bitrate
+*.configurator.dumpAddresses = true
+*.configurator.dumpTopology = true
+**.macAddress = "auto"
+**.mac.address = "auto"
+**.wlan[*].bitrate = 54Mbps
+**.eth[*].bitrate = 100Mbps
+
+# ----------------------------------------------------
+# 2. Lógica de Aplicações e Fluxo Distribuído
+# ----------------------------------------------------
+
+# [Sensor Cabo] -> Envia tráfego redundante (2 Apps independentes para cada Switch)
+*.sensor_freio.numApps = 2
+*.sensor_freio.app[0].typename = "UdpBasicApp"
+*.sensor_freio.app[0].destAddresses = "computador_voo"
+*.sensor_freio.app[0].destPort = 1000
+*.sensor_freio.app[0].messageLength = 64B
+*.sensor_freio.app[0].sendInterval = 2ms
+
+*.sensor_freio.app[1].typename = "UdpBasicApp"
+*.sensor_freio.app[1].destAddresses = "computador_voo"
+*.sensor_freio.app[1].destPort = 1001
+*.sensor_freio.app[1].messageLength = 64B
+*.sensor_freio.app[1].sendInterval = 2ms
+
+# [Sensores de Borda Wireless] -> Enviam para o Líder do Cluster
+*.sensor_WAIC.numApps = 1
+*.sensor_WAIC.app[0].typename = "UdpBasicApp"
+*.sensor_WAIC.app[0].destAddresses = "lider_cluster"
+*.sensor_WAIC.app[0].destPort = 5000
+*.sensor_WAIC.app[0].messageLength = 64B
+*.sensor_WAIC.app[0].sendInterval = 1ms
+
+*.sensor_pressao_motor.numApps = 1
+*.sensor_pressao_motor.app[0].typename = "UdpBasicApp"
+*.sensor_pressao_motor.app[0].destAddresses = "lider_cluster"
+*.sensor_pressao_motor.app[0].destPort = 5001
+*.sensor_pressao_motor.app[0].messageLength = 64B
+*.sensor_pressao_motor.app[0].sendInterval = 1ms
+
+# [Líder do Cluster] -> Atua como Sink dos sensores e repassa agregando de forma redundante
+*.lider_cluster.numApps = 4
+*.lider_cluster.app[0].typename = "UdpSink"
+*.lider_cluster.app[0].localPort = 5000
+*.lider_cluster.app[1].typename = "UdpSink"
+*.lider_cluster.app[1].localPort = 5001
+# Repassadores (Um pacote consolidado para o canal A e outro para o canal B)
+*.lider_cluster.app[2].typename = "UdpBasicApp"
+*.lider_cluster.app[2].destAddresses = "computador_voo"
+*.lider_cluster.app[2].destPort = 2000
+*.lider_cluster.app[2].messageLength = 128B
+*.lider_cluster.app[2].sendInterval = 2ms
+*.lider_cluster.app[3].typename = "UdpBasicApp"
+*.lider_cluster.app[3].destAddresses = "computador_voo"
+*.lider_cluster.app[3].destPort = 2001
+*.lider_cluster.app[3].messageLength = 128B
+*.lider_cluster.app[3].sendInterval = 2ms
+
+# [Computador de Voo] -> O Coração do Sistema. Escuta todas as vias redundantes (A e B)
+*.computador_voo.numApps = 5
+*.computador_voo.app[0].typename = "UdpSink" # Sensor Freio (Via A)
+*.computador_voo.app[0].localPort = 1000
+*.computador_voo.app[1].typename = "UdpSink" # Sensor Freio (Via B)
+*.computador_voo.app[1].localPort = 1001
+*.computador_voo.app[2].typename = "UdpSink" # Dados Agregados WAIC (Via A)
+*.computador_voo.app[2].localPort = 2000
+*.computador_voo.app[3].typename = "UdpSink" # Dados Agregados WAIC (Via B)
+*.computador_voo.app[3].localPort = 2001
+# Envio de ordens de controle para o atuador
+*.computador_voo.app[4].typename = "UdpBasicApp"
+*.computador_voo.app[4].destAddresses = "atuador_flap"
+*.computador_voo.app[4].destPort = 3000
+*.computador_voo.app[4].messageLength = 32B
+*.computador_voo.app[4].sendInterval = 5ms
+
+# [Atuador] -> Executa as ordens recebidas
+*.atuador_flap.numApps = 1
+*.atuador_flap.app[0].typename = "UdpSink"
+*.atuador_flap.app[0].localPort = 3000
