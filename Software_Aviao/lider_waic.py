@@ -1,31 +1,46 @@
-import socket
 import json
 import time
 import random
+import uuid
+import paho.mqtt.client as mqtt
 
-IP_DESTINO = '127.0.0.1'
-PORTA_DESTINO = 5000
+# Configurações do Middleware MQTT
+BROKER = "broker.hivemq.com"
+PORTA = 1883
+TOPICO = "avionica/sensores/waic"
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-print("📡 Líder do Cluster WAIC INICIADO. A agregar dados...")
+def iniciar_lider():
+    cliente = mqtt.Client()
+    cliente.connect(BROKER, PORTA, 60)
+    print("📡 Líder do Cluster WAIC INICIADO.")
+    print("A agregar dados dos motores via rede sem fios e publicando no Middleware...")
+    print("-" * 50)
 
-try:
-    while True:
-        # O Líder "finge" que leu dois sensores sem fio e junta tudo num só pacote
-        pacote_agregado = {
-            "origem": "Lider_WAIC_Agregador",
-            "timestamp": time.time(),
-            "dados": {
-                "sensor_pressao_motor": round(random.uniform(200.0, 250.0), 2),
-                "sensor_temperatura": round(random.uniform(80.0, 110.0), 2)
+    try:
+        while True:
+            # Agrega a informação de vários sensores sem fio num só pacote
+            pacote_agregado = {
+                "id_mensagem": str(uuid.uuid4()),
+                "origem": "Lider_WAIC",
+                "timestamp": time.time(),
+                "dados": {
+                    "pressao_motor": round(random.uniform(200.0, 240.0), 1),
+                    "temperatura": round(random.uniform(85.0, 110.0), 1)
+                },
+                "canal": "Wireless"
             }
-        }
-        
-        mensagem = json.dumps(pacote_agregado).encode('utf-8')
-        sock.sendto(mensagem, (IP_DESTINO, PORTA_DESTINO))
-        
-        print(f"Pacote Agregado Enviado: Motor={pacote_agregado['dados']['sensor_pressao_motor']}, Temp={pacote_agregado['dados']['sensor_temperatura']}")
-        time.sleep(3) # Envia a cada 3 segundos
-        
-except KeyboardInterrupt:
-    sock.close()
+
+            # Publica no tópico de rádio (WAIC)
+            cliente.publish(TOPICO, json.dumps(pacote_agregado))
+            
+            print(f"📡 Pacote WAIC Enviado! Motor: {pacote_agregado['dados']['pressao_motor']} psi | Temp: {pacote_agregado['dados']['temperatura']} °C")
+            
+            # Envia mais rápido para simular o tráfego que vimos no OMNeT++ (a cada 2 segundos)
+            time.sleep(2)
+
+    except KeyboardInterrupt:
+        print("\nNó Líder WAIC Desligado.")
+        cliente.disconnect()
+
+if __name__ == "__main__":
+    iniciar_lider()
