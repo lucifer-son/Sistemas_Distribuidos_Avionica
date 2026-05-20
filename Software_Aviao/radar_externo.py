@@ -10,31 +10,31 @@ TOPICO_RADAR = "avionica/radar"
 def iniciar_radar():
     cliente = mqtt.Client()
     cliente.connect(BROKER, PORTA, 60)
-    print("📡 Radar Meteorológico e ATC INICIADOS.")
-    print("A varrer o espaço aéreo e a comunicar com as torres de controlo...")
-    print("-" * 50)
+    cliente.loop_start()
+
+    climas = ["CÉU LIMPO", "NUVENS", "TEMPESTADE"]
 
     try:
         while True:
+            clima_atual = random.choices(climas, weights=[50, 30, 20])[0]
+            # Se for tempestade, a temperatura cai drasticamente para baixo de zero
+            temp = random.randint(-30, -5) if clima_atual == "TEMPESTADE" else random.randint(5, 15)
+
             pacote = {
-                "origem": "Radar_ATC",
+                "id_mensagem": f"rad_{int(time.time()*1000)}",
                 "dados": {
-                    "vento_knots": random.randint(5, 50),
-                    "temp_externa_c": random.randint(-55, -40), # Frio extremo em altitude de cruzeiro
-                    "turbulencia": random.choice(["NENHUMA", "LEVE", "MODERADA"]),
-                    "gelo": random.choice(["LIVRE", "LIVRE", "AVISO: DETETADO"]), # Menor probabilidade de gelo
-                    "radar_clima": random.choice(["CÉU LIMPO", "NUVENS DENSAS", "TEMPESTADE À FRENTE"]),
-                    "qnh_hpa": random.choice([1012, 1013, 1014]), # Pressão atmosférica de referência
-                    "atc_msg": random.choice(["MANTENHA FL350", "AUTORIZADO DESVIO DE ROTA", "CONTATE CENTRO", "PISTA LIVRE NO DESTINO"])
+                    "vento_knots": random.randint(0, 40),
+                    "turbulencia": "SEVERA" if clima_atual == "TEMPESTADE" else "LEVE",
+                    "radar_clima": clima_atual,
+                    "temp_externa_c": temp,
+                    "qnh_hpa": random.randint(1000, 1025),
+                    "atc_msg": "Evite formacoes" if clima_atual == "TEMPESTADE" else "Rota livre"
                 }
             }
             cliente.publish(TOPICO_RADAR, json.dumps(pacote))
-            print(f"🌩️ Ambiente | Clima: {pacote['dados']['radar_clima']} | ATC: {pacote['dados']['atc_msg']}")
-            time.sleep(4) 
-            
+            time.sleep(3) # O radar varre a cada 3 segundos
     except KeyboardInterrupt:
-        print("\nRadar Desligado.")
-        cliente.disconnect()
+        pass
 
 if __name__ == "__main__":
     iniciar_radar()
