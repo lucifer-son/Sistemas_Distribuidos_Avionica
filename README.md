@@ -1,41 +1,66 @@
-# ✈️ Protótipo de Sistema Distribuído Aviônico (AFDX/WAIC)
+# ✈️ Gateway Tolerante a Falhas para Redes Aviônicas Híbridas (AFDX/WAIC)
 
-Este repositório contém o código-fonte de um protótipo de software crítico distribuído para aviação, desenvolvido como Prova de Conceito (PoC) para análise de redes AFDX (*Avionics Full-Duplex Switched Ethernet*) e WAIC (*Wireless Avionics Intra-Communications*).
-
-O sistema abandona a arquitetura monolítica tradicional em favor de uma **Arquitetura de Microsserviços Orientada a Eventos**, utilizando o protocolo de mensageria **MQTT** (Publish/Subscribe) e orquestração via **Docker**.
-
-## 🚀 Principais Funcionalidades
-
-* **Comunicação Desacoplada (Pub/Sub):** Módulos comunicam-se de forma assíncrona, simulando o tráfego de *Virtual Links* numa rede AFDX.
-* **Tolerância a Falhas Bizantinas (TMR):** Implementação de *Triple Modular Redundancy* nos sensores do motor. Um algoritmo Votador (Consenso) isola sensores corrompidos através do cálculo da mediana, garantindo que o painel do piloto nunca receba dados anómalos.
-* **Coreografia de Microsserviços (Automação):** O sistema Anti-Gelo (FADEC) opera de forma reativa e autónoma, avaliando publicações do Radar Meteorológico e ativando as defesas da aeronave sem intervenção do piloto.
-* **Auditoria e Registo (FDR - Caixa Preta):** Um nó de escuta passiva captura e persiste todo o tráfego da rede num ficheiro CSV (timestamp ao milissegundo) para análise *post-mortem*.
-* **Interface Gráfica (Glass Cockpit):** Painel do piloto desenvolvido com `customtkinter`, exibindo telemetria em tempo real.
-* **Injeção de Falhas (Simulador):** Painel do instrutor para forçar a corrupção de sensores e simular alertas (EGPWS, Engine Fire) em pleno voo.
+Um projeto completo de modelagem, simulação e implementação de um sistema crítico distribuído para a aviação moderna. Este repositório foca na integração segura entre redes cabeadas determinísticas (**AFDX**) e redes sem fio nas extremidades da aeronave (**WAIC**).
 
 ---
 
-## 📂 Estrutura dos Microsserviços
+## 📌 Visão Geral e Principais Funcionalidades
 
-O backend da aeronave foi modelado em contentores independentes. Abaixo está a finalidade de cada script Python:
+Nosso sistema atua como o "sistema nervoso" de uma aeronave, lidando com a complexidade de sistemas críticos de tempo real. As principais funcionalidades desenvolvidas incluem:
 
-### Sensores e Módulos Físicos
-* `sensor_freio.py`: Publica a temperatura dos travões e monitoriza o uso de *Autobrake*.
-* `sensores_voo.py`: Publica a atitude da aeronave (Pitch, Roll) e os dados do Tubo de Pitot (Velocidade, Altitude).
-* `radar_externo.py`: Gera condições meteorológicas aleatórias (Céu Limpo, Nuvens, Tempestade) e temperaturas externas associadas.
-* `sensor_motor.py`: Script base instanciado 3 vezes (A, B e C) via Docker, simulando redundância tripla na leitura da pressão do motor (N1).
-
-### Sistemas de Computação e Consenso
-* `computador_navegacao.py`: Simula o sistema ILS/GPS, publicando desvios de rota.
-* `fms_distribuido.py`: API REST (Flask) do Flight Management System, servindo o plano de voo em JSON.
-* `consenso_motor.py`: O "Nó Votador". Ouve os três sensores de motor, descarta anomalias (Falha Bizantina) e publica a leitura de consenso segura.
-* `computador_automacao.py`: O "Cérebro" autónomo. Ouve o Radar e, caso detete Tempestade e Temperatura < 0°C, comanda o sistema Anti-Gelo a ligar (Coreografia).
-
-### Ferramentas de Superfície (Interfaces)
-* `computador_voo.py`: O Frontend do Piloto (Glass Cockpit). Inscreve-se em todos os tópicos validados e exibe os dados visualmente.
-* `injetor_falhas.py`: O Frontend do Instrutor. Publica comandos destrutivos num tópico restrito para corromper sensores específicos e avaliar a resposta da rede.
-* `caixa_preta.py`: O gravador *Flight Data Recorder*. Usa o *wildcard* `#` do MQTT para ouvir toda a comunicação e salvar logs em `flight_data_recorder.csv`.
+* **Gateway de Admissão de Tráfego:** Uma ponte tolerante a falhas que recebe dados assíncronos de nós sem fio (WAIC) e os enfileira na rede determinística (AFDX) com rigoroso controle de admissão (evitando congestionamento e respeitando limites de *jitter*).
+* **Consenso TMR (Triple Modular Redundancy):** Algoritmo de "Votador Bizantino" implementado no Motor da aeronave. Ele exige a leitura idêntica de pelo menos 3 sensores para validar uma informação, descartando dados corrompidos ou falhas de hardware.
+* **Atuação Autônoma (Anti-Gelo):** Microsserviço independente capaz de tomar decisões locais e autônomas em tempo real para a segurança do voo, baseado em leituras de sensores das asas.
+* **Caixa Preta Isolada:** Nó arquitetado de forma modular para registrar eventos no barramento de forma passiva e isolada, garantindo integridade e segurança.
 
 ---
-## 🔬 Modelagem Matemática
-A verificação formal deste protótipo, comprovando o determinismo da rede (livre de impasses/deadlocks) e o isolamento de falhas bizantinas, foi modelada através de Redes de Petri Hierárquicas (simuladas em software PIPE) e analisada em termos de desempenho estrito usando o simulador OMNeT++. (Mais detalhes disponíveis no artigo científico do projeto).
+
+## 🏗️ Estrutura de Microsserviços e Sensores
+
+A arquitetura do protótipo afasta-se de sistemas monolíticos obsoletos e adota uma abordagem moderna, distribuída e sem servidor:
+
+* **Padrão Publish/Subscribe:** Utilização do protocolo leve **MQTT** para garantir que sensores, atuadores e o FMS (*Flight Management System*) operem de forma totalmente desacoplada.
+* **Sensores e Atuadores Simulados:** Nós independentes (sensores de temperatura, pressão, atuadores de motor, sistema anti-gelo) que publicam e assinam tópicos específicos.
+* **Orquestração em Docker:** Todos os componentes e o *middleware* de comunicação rodam em contêineres Docker isolados, facilitando a escalabilidade, reprodução e testes do ambiente.
+
+---
+
+## 📐 Modelagem Matemática e Formal
+
+Sistemas de aviação exigem certificação de aeronavegabilidade rigorosa. Para garantir a confiabilidade antes de qualquer linha de código ir para o ar, aplicamos modelagem formal:
+
+* **Redes de Petri Estocásticas (SPN/DSPN):** Utilizamos a ferramenta **PIPE** para modelar matematicamente todos os estados do Gateway, a coreografia autônoma e o fluxo de dados.
+* **Prova de Consenso e Sincronização:** Modelagem específica do algoritmo TMR para garantir a confiabilidade sob falha bizantina.
+* **Garantia contra Deadlocks:** O modelo matemático comprova formalmente a **ausência de deadlocks lógicos**, garantindo que o sistema nunca ficará "travado" aguardando respostas infinitas, além de validar a sincronização precisa de estados.
+
+---
+
+## 📊 Simulação e Análise de Desempenho
+
+Para validar parâmetros físicos de rede (onde a latência é questão de vida ou morte), criamos uma topologia simulada:
+
+* **Simulador:** OMNeT++ (com framework INET).
+* **Métricas Extraídas:** Análise gráfica e quantitativa de tráfego crítico vs. não-crítico, aferindo latência ponta-a-ponta, vazão (*throughput*) e taxa de perda de pacotes sob diferentes cargas de estresse.
+
+---
+
+## 🛠️ Ferramentas Utilizadas
+
+* **Linguagens/Scripts:** Python / C++
+* **Middleware:** Eclipse Mosquitto (MQTT Broker)
+* **Orquestração:** Docker e Docker Compose
+* **Modelagem Formal:** PIPE (Platform Independent Petri Net Editor)
+* **Simulação de Redes:** OMNeT++ e INET Framework
+
+---
+
+## 🚀 Como Executar o Projeto
+
+### 1. Protótipo de Microsserviços (Docker)
+```bash
+# Clone o repositório
+git clone [https://github.com/seu-usuario/gateway-afdx-waic.git](https://github.com/seu-usuario/gateway-afdx-waic.git)
+cd gateway-afdx-waic/software
+
+# Suba a infraestrutura de rede, o Broker MQTT e os sensores
+docker-compose up --build
