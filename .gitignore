@@ -18,6 +18,16 @@ build/
 dist/
 *.egg-info/
 
+# Node.js
+node_modules/
+.npm-cache/
+npm-debug.log*
+
+# Gradle
+.gradle/
+**/build/
+!**/src/**/build/
+
 # Virtual environments
 .venv/
 venv/
