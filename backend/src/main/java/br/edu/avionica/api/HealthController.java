@@ -38,7 +38,10 @@ public class HealthController {
             module("fms-api", "Python", "PLANNED"),
             module("sensor-flight", "Python", "PLANNED"),
             module("sensor-brake", "Python", "PLANNED"),
-            module("radar", "Python", "PLANNED")
+            module("radar", "Python", "PLANNED"),
+            module("navigation-computer", "Python", "PLANNED"),
+            module("automation-computer", "Python", "PLANNED"),
+            module("waic-leader", "Python", "PLANNED")
         );
     }
 

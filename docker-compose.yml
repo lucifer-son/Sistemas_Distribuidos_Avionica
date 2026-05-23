@@ -52,12 +52,15 @@ services:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-avionica}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-avionica_dev}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      MQTT_BROKER_URL: tcp://mqtt-broker:1883
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
+        condition: service_started
+      mqtt-broker:
         condition: service_started
 
   frontend:
@@ -66,6 +69,9 @@ services:
     container_name: avionica_frontend
     environment:
       VITE_API_BASE_URL: http://localhost:8080
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     ports:
       - "5173:5173"
     depends_on:
@@ -128,5 +134,49 @@ services:
     depends_on:
       - mqtt-broker
 
+  navigation-computer:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_navigation_computer
+    command: python computador_navegacao.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+
+  automation-computer:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_automation_computer
+    command: python computador_automacao.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+      - radar
+
+  waic-leader:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_waic_leader
+    command: python lider_waic.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+
 volumes:
   postgres_data:
+  frontend_node_modules:

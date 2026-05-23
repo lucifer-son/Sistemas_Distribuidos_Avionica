@@ -26,3 +26,29 @@ body {
 .status-dot.online {
   background: #1f9d55;
 }
+
+.data-list {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 1.2fr);
+  gap: 0.625rem 1rem;
+}
+
+.data-list dt {
+  color: #607085;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.data-list dd {
+  color: #111827;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.payload {
+  display: block;
+  max-width: 42rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

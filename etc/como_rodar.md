@@ -221,6 +221,7 @@ Depois que os containers subirem, acesse:
 - Frontend Web: http://localhost:5173
 - Backend Health Check: http://localhost:8080/api/health
 - Lista de Modulos: http://localhost:8080/api/modules
+- Dados da aeronave: http://localhost:8080/api/aircraft-data
 - PostgreSQL: localhost:5432
 - Kafka: `kafka:9092`, acessivel internamente pelos containers
 - MQTT temporario: localhost:1883
@@ -362,3 +363,33 @@ docker compose up frontend
 ```
 
 Esse erro acontece quando dependencias instaladas no Windows sao copiadas indevidamente para dentro do container Linux. O arquivo `frontend/.dockerignore` evita esse problema ignorando `node_modules/`, `dist/` e caches locais.
+
+### Frontend continua mostrando tela antiga
+
+Se o navegador ainda mostrar uma versao antiga da tela:
+
+1. Pare os containers:
+
+```bash
+docker compose down --remove-orphans
+```
+
+2. Recrie o frontend e o backend:
+
+```bash
+docker compose build --no-cache frontend backend-gateway
+```
+
+3. Suba novamente:
+
+```bash
+docker compose up
+```
+
+4. No navegador, force o recarregamento:
+
+```text
+Ctrl + F5
+```
+
+O `docker-compose.yml` monta a pasta `frontend/` dentro do container em modo desenvolvimento. Assim, a tela em `http://localhost:5173` deve refletir o codigo atual de `frontend/src/App.vue`.
