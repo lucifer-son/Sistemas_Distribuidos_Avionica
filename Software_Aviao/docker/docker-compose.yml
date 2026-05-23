@@ -1,38 +1,59 @@
-version: '3.8'
-
 services:
   sensor_freio:
-    build: ..
-    container_name: modulo_freios_redundante
+    build: .
     command: python sensor_freio.py
     restart: always
 
-  lider_waic:
-    build: ..
-    container_name: modulo_waic_wireless
-    command: python lider_waic.py
-    restart: always
-
   sensores_voo:
-    build: ..
-    container_name: modulo_sistemas_gerais
+    build: .
     command: python sensores_voo.py
     restart: always
 
   navegacao:
-    build: ..
-    container_name: modulo_navegacao_auto
+    build: .
     command: python computador_navegacao.py
     restart: always
 
   radar:
-    build: ..
-    container_name: modulo_radar_atc
+    build: .
     command: python radar_externo.py
     restart: always
 
   fms_api:
-    build: ..
-    container_name: modulo_fms_api
+    build: .
     command: python fms_distribuido.py
+    restart: always
+
+  # ARQUITETURA TMR (TRIPLE MODULAR REDUNDANCY)
+  
+  sensor_motor_a:
+    build: .
+    command: python sensor_motor.py
+    environment:
+      - SENSOR_ID=A
+    restart: always
+
+  sensor_motor_b:
+    build: .
+    command: python sensor_motor.py
+    environment:
+      - SENSOR_ID=B
+    restart: always
+
+  sensor_motor_c:
+    build: .
+    command: python sensor_motor.py
+    environment:
+      - SENSOR_ID=C
+    restart: always
+
+  consenso_votador:
+    build: .
+    command: python consenso_motor.py
+    restart: always
+
+# Automação
+  computador_voo:
+    build: .
+    command: python computador_automacao.py
     restart: always
