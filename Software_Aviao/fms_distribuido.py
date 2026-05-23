@@ -1,6 +1,7 @@
 import json
 import time
 import math
+import os
 import requests
 import threading
 import paho.mqtt.client as mqtt
@@ -11,7 +12,7 @@ TOPICO_ROTA_CMD = "avionica/comandos/rota" # Escuta o que o piloto digitou
 TOPICO_VOO = "avionica/sensores/voo"       # Escuta a velocidade do avião
 TOPICO_FMS_DADOS = "avionica/fms/dados"    # Publica o resultado calculado
 
-API_KEY = "Solicitar Chave" # minha chave da API Ninjas
+API_KEY = os.getenv("FMS_API_KEY") or os.getenv("API_NINJAS_KEY")
 
 class FlightManagementSystem:
     def __init__(self):
@@ -30,6 +31,10 @@ class FlightManagementSystem:
         return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
 
     def buscar_coordenadas(self, icao):
+        if not API_KEY:
+            print("❌ Erro: defina FMS_API_KEY no .env para consultar a API Ninjas.")
+            return None, None
+
         url = f"https://api.api-ninjas.com/v1/airports?icao={icao}"
         resposta = requests.get(url, headers={'X-Api-Key': API_KEY})
         if resposta.status_code == 200 and len(resposta.json()) > 0:
