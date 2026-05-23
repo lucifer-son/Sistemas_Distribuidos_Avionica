@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: avionica_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-avionica}
+      POSTGRES_USER: ${POSTGRES_USER:-avionica}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-avionica_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avionica} -d ${POSTGRES_DB:-avionica}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:4.1.1
+    container_name: avionica_kafka
+    environment:
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: WARN
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: avionica_mqtt_broker
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  backend-gateway:
+    build:
+      context: ./backend
+    container_name: avionica_backend_gateway
+    environment:
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/avionica}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-avionica}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-avionica_dev}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: avionica_frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend-gateway
+
+  fms-api:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_fms_api
+    command: python fms_distribuido.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      FMS_API_KEY: ${FMS_API_KEY:-}
+    depends_on:
+      - mqtt-broker
+
+  sensor-flight:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_sensor_flight
+    command: python sensores_voo.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+
+  sensor-brake:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_sensor_brake
+    command: python sensor_freio.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+
+  radar:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_radar
+    command: python radar_externo.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore::DeprecationWarning
+      MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    depends_on:
+      - mqtt-broker
+
+volumes:
+  postgres_data:

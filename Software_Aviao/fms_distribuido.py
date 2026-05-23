@@ -6,8 +6,8 @@ import requests
 import threading
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 TOPICO_ROTA_CMD = "avionica/comandos/rota" # Escuta o que o piloto digitou
 TOPICO_VOO = "avionica/sensores/voo"       # Escuta a velocidade do avião
 TOPICO_FMS_DADOS = "avionica/fms/dados"    # Publica o resultado calculado

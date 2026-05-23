@@ -1,13 +1,14 @@
 
 import json
+import os
 import time
 import random
 import uuid
 import paho.mqtt.client as mqtt
 
 # Configurações do Middleware MQTT
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 TOPICO = "avionica/sensores/freios"
 
 def iniciar_sensor():

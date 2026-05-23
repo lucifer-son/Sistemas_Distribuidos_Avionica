@@ -4,8 +4,8 @@ import time
 import random
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 
 # O Docker vai dizer a cada clone se ele é o A, B ou C
 ID_SENSOR = os.getenv("SENSOR_ID", "A") 

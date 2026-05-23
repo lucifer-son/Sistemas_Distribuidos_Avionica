@@ -1,0 +1,28 @@
+body {
+  background: #f4f6f8;
+  color: #1f2933;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.status-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: #d64545;
+  display: inline-block;
+  margin-top: 0.4rem;
+}
+
+.status-dot.online {
+  background: #1f9d55;
+}

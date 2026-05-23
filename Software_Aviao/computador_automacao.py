@@ -1,8 +1,9 @@
 import json
+import os
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 TOPICO_RADAR = "avionica/radar"
 TOPICO_ANTI_ICE = "avionica/sistemas/anti_ice"
 

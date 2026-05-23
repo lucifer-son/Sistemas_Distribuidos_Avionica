@@ -4,8 +4,8 @@ import json
 import paho.mqtt.client as mqtt
 from datetime import datetime
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 
 # O '#' significa "Ouve todas as sub-camadas dentro de avionica/"
 TOPICO_TUDO = "avionica/#" 

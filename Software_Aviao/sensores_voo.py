@@ -1,11 +1,12 @@
 import json
+import os
 import time
 import random
 import threading
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 TOPICO_VOO = "avionica/sensores/voo"
 TOPICO_CMD = "avionica/comandos/velocidade" # NOVO TÓPICO PARA OUVIR COMANDOS
 

@@ -1,9 +1,10 @@
 import json
+import os
 import time
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 TOPICO_ESCUTA_SENSORES = "avionica/sensores/motor/#" # Escuta todos (A, B e C)
 TOPICO_WAIC_FINAL = "avionica/sensores/waic"         # Envia o consenso para o painel
 

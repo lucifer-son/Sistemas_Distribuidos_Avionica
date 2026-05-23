@@ -1,10 +1,11 @@
 import json
+import os
 import math 
 import customtkinter as ctk
 import paho.mqtt.client as mqtt
 
-BROKER = "broker.hivemq.com"
-PORTA = 1883
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+PORTA = int(os.getenv("MQTT_PORT", "1883"))
 
 TOPICO_FREIOS = "avionica/sensores/freios"
 TOPICO_WAIC = "avionica/sensores/waic"
