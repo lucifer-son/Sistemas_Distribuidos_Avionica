@@ -1,374 +1,134 @@
 # 📋 Análise do Backend — Sistema Distribuído de Aviônica
 
-> **Documento de análise técnica e sugestões de melhoria**
-> Atualizado após refatoração de maio de 2026 | Projeto: Gateway Tolerante a Falhas AFDX/WAIC
+> **Documento de análise técnica, estado atual e roadmap de implementação**
+> Última atualização: maio de 2026 | Projeto: Gateway Tolerante a Falhas AFDX/WAIC
 
 ---
 
-## 🔄 O que Mudou na Refatoração
+## 1. Estado Atual — O que já está funcionando ✅
 
-A refatoração moveu os arquivos Java de:
+### 1.1 Estrutura do Projeto (pós-refatoração e correções)
 
-```
-src/main/java/br/edu/avionica/   ← estrutura Maven/Gradle padrão
-```
-
-Para:
-
-```
-src/main/avionica/               ← estrutura customizada
-```
-
-> [!CAUTION]
-> **Esta mudança quebra a compilação do projeto!**
-> O Gradle espera que o código-fonte Java esteja em `src/main/java/`. A pasta `src/main/avionica/` não é reconhecida pelo Gradle como source set padrão. O `gradlew build` vai compilar sem nenhum arquivo e gerar um JAR vazio.
-
-### Comparativo Antes × Depois
-
-| Aspecto                       | Antes (original)                            | Depois (refatorado)                          |
-|-------------------------------|---------------------------------------------|----------------------------------------------|
-| Localização dos arquivos      | `src/main/java/br/edu/avionica/`            | `src/main/avionica/`                         |
-| Diretório source padrão Gradle | ✅ Correto (`src/main/java`)                | ❌ Incorreto (`src/main/avionica`)            |
-| Declaração `package`          | `package br.edu.avionica.*`                 | `package br.edu.avionica.*` (inalterado)     |
-| Código dos arquivos           | Inalterado                                  | Inalterado (apenas movido de pasta)          |
-| Typo no nome da classe        | `AircrafTelemetriaServiso` ❌               | `AircrafTelemetriaServiso` ❌ (ainda existe) |
-| Conflito pacote vs. diretório | `telemetry` ≠ `telemetria` ❌              | `telemetry` ≠ `telemetria` ❌ (ainda existe) |
-
----
-
-## 1. Visão Geral da Arquitetura Atual
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      FRONTEND (Vue.js)                       │
-│                  Porta 5173 — Interface Web                  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ HTTP REST (polling)
-┌──────────────────────────▼──────────────────────────────────┐
-│              BACKEND-GATEWAY (Spring Boot 4 + Java 25)       │
-│               Porta 8080 — API REST + MQTT Client            │
-└────────┬──────────────────────────────────────┬─────────────┘
-         │ JDBC (conecta, mas não persiste)      │ MQTT Subscribe
-┌────────▼────────┐                  ┌───────────▼────────────┐
-│   PostgreSQL 17  │                  │   Mosquitto MQTT Broker │
-│  Porta 5432      │                  │   Porta 1883            │
-└─────────────────┘                  └───────────┬─────────────┘
-                                                  │ MQTT Publish
-                    ┌────────────────────┬─────────┴──────────┬────────────────────┐
-                    │                    │                     │                    │
-          ┌─────────▼──────┐  ┌──────────▼──────┐  ┌─────────▼─────┐  ┌──────────▼──────┐
-          │  sensor-flight  │  │  sensor-brake   │  │    radar      │  │  navigation-    │
-          │  (Python)       │  │  (Python)       │  │  (Python)     │  │  computer (Py)  │
-          └────────────────┘  └─────────────────┘  └───────────────┘  └─────────────────┘
-                    │
-          ┌─────────▼──────┐  ┌─────────────────┐  ┌───────────────┐
-          │ automation-    │  │  waic-leader    │  │   fms-api     │
-          │ computer (Py)  │  │  (Python)       │  │  (Python)     │
-          └────────────────┘  └─────────────────┘  └───────────────┘
-
-         [Apache Kafka 4.1.1 — no ar, mas sem produtores/consumidores no backend]
-```
-
----
-
-## 2. Problema Crítico Introduzido pela Refatoração
-
-### 2.1 ❌ Diretório Fora do Source Set Padrão do Gradle
-
-O Gradle (e o Maven) em projetos Java seguem a **convenção sobre configuração**: o código-fonte Java **deve** estar em `src/main/java/`. O Gradle procura classes para compilar exatamente neste caminho.
-
-**Estrutura atual (incorreta):**
 ```
 backend/
+├── build.gradle                          ✅ Source set configurado corretamente
+├── Dockerfile                            ✅ Multi-stage build (JDK 25 → JRE 25)
 └── src/
     └── main/
-        ├── avionica/          ← ❌ Gradle NÃO compila arquivos aqui
+        ├── avionica/                     ✅ Source root correto (srcDirs = ['src/main'])
+        │   ├── AvionicaBackendApplication.java   package avionica
         │   ├── api/
+        │   │   ├── AircraftDataController.java   package avionica.api
+        │   │   └── HealthController.java         package avionica.api
         │   ├── config/
-        │   └── telemetria/
+        │   │   ├── CorsConfig.java               package avionica.config
+        │   │   └── StartupLogger.java            package avionica.config
+        │   └── telemetry/                        ✅ pasta = package (inglês)
+        │       ├── AircraftDataSnapshot.java     package avionica.telemetry
+        │       ├── AircraftMessage.java          package avionica.telemetry
+        │       └── AircraftTelemetryService.java ✅ nome correto (sem typo)
         └── resources/
-            └── application.yml
+            └── application.yml                  ✅ logging aponta para avionica
 ```
 
-**Estrutura correta (padrão Gradle/Maven):**
-```
-backend/
-└── src/
-    └── main/
-        ├── java/              ← ✅ Gradle compila arquivos aqui
-        │   └── br/edu/avionica/
-        │       ├── api/
-        │       ├── config/
-        │       └── telemetria/
-        └── resources/
-            └── application.yml
-```
+### 1.2 Correções Aplicadas (histórico)
 
-**Como corrigir:** Mover os arquivos de volta para `src/main/java/br/edu/avionica/` (ou configurar um source set customizado no `build.gradle`).
-
-**Opção alternativa** (se quiser manter a estrutura customizada):
-```groovy
-// build.gradle — adicionar source set customizado
-sourceSets {
-    main {
-        java {
-            srcDirs = ['src/main/avionica']
-        }
-    }
-}
-```
-
-> [!WARNING]
-> Mesmo com a configuração de source set acima, o `package br.edu.avionica.*` declarado nos arquivos precisa bater com a estrutura de diretórios **dentro** do source set. Atualmente `telemetria/AircraftTelemetriaService.java` declara `package br.edu.avionica.telemetry` (em inglês), mas a pasta é `telemetria` (em português). Isso causará erro de compilação mesmo após corrigir o source set.
+| Problema | Como foi resolvido |
+|----------------------------------------------------|--------------------------------------------------------------------------|
+| Arquivos fora do source set (`src/main/avionica/`) | `sourceSets { main { java { srcDirs = ['src/main'] }}}` no `build.gradle` |
+| Package `br.edu.avionica` ≠ diretório `avionica/`   | Todos os packages alterados para `avionica.*`                             |
+| Pasta `telemetria/` ≠ `package telemetry`          | Pasta renomeada para `telemetry/`                                        |
+| Typo `AircrafTelemetriaServiso`                    | Classe e arquivo renomeados para `AircraftTelemetryService`              |
+| `application.yml` com logger antigo                | `br.edu.avionica: INFO` → `avionica: INFO`                               |
+| **Resultado:** `gradlew compileJava` → **BUILD SUCCESSFUL** ✅ |                                                                          |
 
 ---
 
-## 3. Problemas que Continuam Existindo (não resolvidos pela refatoração)
+## 2. Arquitetura Atual — O que existe e o que faz
 
-### 3.1 ❌ Conflito entre Nome do Pacote e Nome do Diretório
-
-Todos os arquivos no diretório `telemetria/` declaram:
-```java
-package br.edu.avionica.telemetry;  // ← "telemetry" em inglês
-```
-
-Mas o diretório físico é `telemetria/` (em português). Em Java, o nome do pacote **deve** corresponder exatamente à hierarquia de diretórios. Isso causa:
-- Erro de compilação no Gradle
-- Confusão para todos os integrantes da equipe
-
-**Escolha e aplique um padrão único:**
-
-| Opção | Diretório               | Declaração package                  |
-|-------|-------------------------|-------------------------------------|
-| A     | `telemetria/`           | `package br.edu.avionica.telemetria;`|
-| B     | `telemetry/`            | `package br.edu.avionica.telemetry;` |
-
----
-
-### 3.2 ❌ Typo no Nome da Classe de Serviço (persiste desde a versão anterior)
-
-Em [AircraftTelemetriaService.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftTelemetriaService.java):
-
-```java
-// Linha 29 — nome da classe com dois erros:
-public class AircrafTelemetriaServiso implements MqttCallbackExtended {
-//           ↑ falta "t"       ↑ "Serviso" ≠ "Service"
-```
-
-Em [AircraftDataController.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/api/AircraftDataController.java):
-
-```java
-// Linha 4 e 12 — import e uso com nome errado:
-import br.edu.avionica.telemetry.AircrafTelemetriaServiso;
-private final AircrafTelemetriaServiso  telemetryService;  // note o espaço extra
-```
-
----
-
-### 3.3 ❌ Kafka configurado mas não utilizado
-
-O `application.yml` configura o Kafka em dois lugares:
-```yaml
-spring:
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-
-app:
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-```
-
-O `build.gradle` tem a dependência:
-```groovy
-implementation 'org.springframework.kafka:spring-kafka'
-```
-
-Mas **não existe nenhum** `@KafkaListener` ou `KafkaTemplate` no código. O Kafka sobe no Docker, ocupa memória e CPU, sem nenhum benefício.
-
----
-
-### 3.4 ❌ PostgreSQL sem nenhuma tabela ou dado persistido
-
-O `spring-boot-starter-jdbc` está nas dependências e o `application.yml` configura a URL do banco. O Spring conecta com sucesso ao PostgreSQL, mas **não há nenhuma classe de repositório, DAO ou SQL** no projeto. Nenhum dado de telemetria é salvo em disco.
-
----
-
-### 3.5 ❌ Status dos módulos é hardcoded
-
-O endpoint `GET /api/modules` em [HealthController.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/api/HealthController.java) retorna sempre a mesma lista estática:
-
-```java
-module("fms-api", "Python", "PLANNED"),      // Sempre PLANNED, mesmo rodando
-module("sensor-flight", "Python", "PLANNED"), // Sempre PLANNED, mesmo rodando
-```
-
----
-
-## 4. Mapeamento Completo dos Arquivos Atuais
-
-### 4.1 Estrutura de Pacotes Java (pós-refatoração)
+### 2.1 Diagrama de fluxo de dados atual
 
 ```
-src/main/avionica/                           ← ⚠️ Fora do source set padrão
-├── AvionicaBackendApplication.java          package br.edu.avionica
-├── api/
-│   ├── AircraftDataController.java          package br.edu.avionica.api
-│   └── HealthController.java               package br.edu.avionica.api
-├── config/
-│   ├── CorsConfig.java                      package br.edu.avionica.config
-│   └── StartupLogger.java                  package br.edu.avionica.config
-└── telemetria/                              ← ⚠️ diretório em PT, pacote em EN
-    ├── AircraftDataSnapshot.java            package br.edu.avionica.telemetry ← ⚠️
-    ├── AircraftMessage.java                 package br.edu.avionica.telemetry ← ⚠️
-    └── AircraftTelemetriaService.java       package br.edu.avionica.telemetry ← ⚠️
-                                             class AircrafTelemetriaServiso    ← ⚠️ typo
+[Vue.js Frontend :5173]
+         │
+         │  HTTP GET /api/aircraft-data  (polling manual)
+         ▼
+[Spring Boot Backend :8080]
+         │
+         │  MQTT Subscribe avionica/#
+         ▼
+[Eclipse Mosquitto :1883]
+         │
+         ├──────────────────┬──────────────────┬──────────────────┐
+         ▼                  ▼                  ▼                  ▼
+  [sensor-flight]    [sensor-brake]       [radar]          [waic-leader]
+  (Python — 1s)      (Python — 3s)    (Python — 3s)      (Python — 2s)
+         │
+         ├──────────────────┬──────────────────┐
+         ▼                  ▼                  ▼
+ [navigation-comp]  [automation-comp]      [fms-api]
+  (Python — 3s)      (Python — evento)  (Python — 2s)
+
+[PostgreSQL :5432]  ← conectado pelo Spring, mas SEM TABELAS criadas
+[Kafka :9092]       ← no ar, mas SEM produtores/consumidores no backend
 ```
 
-### 4.2 Responsabilidade de cada Classe
+### 2.2 Endpoints REST disponíveis
 
-| Arquivo | Função |
-|---------|--------|
-| [AvionicaBackendApplication.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/AvionicaBackendApplication.java) | Ponto de entrada Spring Boot (`main`) |
-| [AircraftDataController.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/api/AircraftDataController.java) | `GET /api/aircraft-data` → retorna snapshot de telemetria |
-| [HealthController.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/api/HealthController.java) | `GET /api/health` e `GET /api/modules` (status hardcoded) |
-| [CorsConfig.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/config/CorsConfig.java) | Libera CORS para `localhost:5173` |
-| [StartupLogger.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/config/StartupLogger.java) | Loga URLs úteis ao subir (`@PostConstruct`) |
-| [AircraftTelemetriaService.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftTelemetriaService.java) | Conecta ao MQTT, recebe mensagens, mantém snapshot em memória |
-| [AircraftDataSnapshot.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftDataSnapshot.java) | `record` com os campos de telemetria (voo, freios, radar, FMS…) |
-| [AircraftMessage.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftMessage.java) | `record` com tópico, timestamp e payload de uma mensagem MQTT |
-
----
-
-## 5. O Serviço de Telemetria — Como Funciona (detalhado)
-
-O [AircraftTelemetriaService.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftTelemetriaService.java) é o componente mais importante do backend. Ele funciona assim:
-
-```
-@PostConstruct start()
-       │
-       ▼
-MqttClient.connect(brokerUrl)
-       │
-       ▼
-client.subscribe("avionica/#")   ← assina TODOS os tópicos aviônicos
-       │
-       ▼  [ao chegar mensagem]
-messageArrived(topic, mqttMessage)
-       │
-       ├─► latestByTopic.put(topic, message)   ← ConcurrentHashMap (última por tópico)
-       │
-       └─► recentMessages.addLast(message)     ← ArrayDeque limitada a 30 mensagens
-                    synchronized
-
-       │  [ao chamar GET /api/aircraft-data]
-       ▼
-snapshot()
-       │
-       ├─► lê latestByTopic para cada tópico fixo
-       │   (sensores/voo, sensores/freios, radar, fms/dados, navegacao, waic, anti_ice, falhas)
-       │
-       └─► retorna AircraftDataSnapshot (Record imutável)
-```
-
-**Detalhes técnicos da implementação:**
-
-| Aspecto | Decisão | Avaliação |
+| Endpoint | Método | O que retorna |
 |---|---|---|
-| Thread-safety do mapa | `ConcurrentHashMap` | ✅ Correto |
-| Thread-safety da fila | `synchronized (recentMessages)` | ✅ Correto |
-| Reconexão automática | `setAutomaticReconnect(true)` | ✅ Correto |
-| Re-subscribe após reconexão | `connectComplete()` reinscreve | ✅ Correto |
-| Tamanho máximo da fila | 30 mensagens | ⚠️ Baixo para demonstração |
-| Persistência | Nenhuma — tudo em memória | ❌ Dados perdidos ao reiniciar |
-| Client ID | `UUID.randomUUID()` a cada startup | ⚠️ Gera sessões órfãs no broker |
+| `/api/health` | GET | `{"status":"UP","service":"backend-gateway","timestamp":"..."}` |
+| `/api/modules` | GET | Lista de módulos com status (hardcoded) |
+| `/api/aircraft-data` | GET | Snapshot da telemetria atual (dados em memória) |
+| `/actuator/health` | GET | Health check do Spring Actuator |
+| `/actuator/info` | GET | Info da aplicação |
+
+### 2.3 Como o serviço de telemetria funciona hoje
+
+```
+@PostConstruct → conecta ao MQTT → subscribe("avionica/#")
+                                           │
+                    ┌──────────────────────▼────────────────────────┐
+                    │         messageArrived(topic, message)         │
+                    │                                                │
+                    │  latestByTopic.put(topic, message)            │
+                    │     ConcurrentHashMap — última por tópico     │
+                    │                                                │
+                    │  recentMessages.addLast(message)              │
+                    │     ArrayDeque — limitada a 30 mensagens      │
+                    └────────────────────────────────────────────────┘
+                                           │
+              GET /api/aircraft-data → snapshot()
+                    │
+                    └── lê latestByTopic para cada tópico fixo
+                        monta e retorna AircraftDataSnapshot (record Java)
+```
+
+**Pontos positivos da implementação atual:**
+- `ConcurrentHashMap` garante thread-safety na leitura/escrita concorrente ✅
+- `synchronized(recentMessages)` protege a fila de mensagens ✅
+- `setAutomaticReconnect(true)` reconecta automaticamente ao MQTT ✅
+- `connectComplete()` re-faz o subscribe após reconexão ✅
+- Falha silenciosa no MQTT — API continua no ar sem telemetria ✅
 
 ---
 
-## 6. Sugestões de Melhoria (Prioridade Atualizada)
+## 3. O que está FALTANDO implementar
 
-### 🔴 6.1 Corrigir a Localização dos Arquivos (URGENTE — o projeto não compila)
-
-**Problema:** Arquivos em `src/main/avionica/` não são compilados pelo Gradle.
-
-**Solução A — Mover para o local padrão:**
-```powershell
-# Mover os arquivos para a estrutura correta
-New-Item -Path "backend\src\main\java\br\edu\avionica" -ItemType Directory -Force
-Move-Item "backend\src\main\avionica\*" "backend\src\main\java\br\edu\avionica\"
-```
-
-**Solução B — Configurar source set customizado no `build.gradle`:**
-```groovy
-// Adicionar ao build.gradle
-sourceSets {
-    main {
-        java {
-            srcDirs = ['src/main/avionica']
-        }
-    }
-}
-```
-
-**Por quê:** Sem isso, o `gradlew build` gera um JAR sem nenhuma classe. A aplicação não sobe. Este é o problema mais crítico do momento.
+Esta seção detalha **cada funcionalidade ausente**, porque ela é necessária, e como implementar.
 
 ---
 
-### 🔴 6.2 Corrigir o Conflito de Pacote vs. Diretório (URGENTE)
+### 🔴 3.1 Persistência no PostgreSQL — NENHUM dado é salvo
 
-**Problema:** Arquivos em `telemetria/` declaram `package br.edu.avionica.telemetry` (inglês).
+**Situação atual:** O Spring conecta ao banco, mas não há tabelas, migrations ou queries. Se o backend reiniciar, toda a telemetria em memória é perdida.
 
-**Solução:** Escolher e padronizar **uma** nomenclatura. Recomendação: renomear o diretório para `telemetry/` (inglês), alinhando com a convenção do código:
+**O que precisa ser criado:**
 
-```powershell
-Rename-Item "backend\src\main\avionica\telemetria" "telemetry"
-# ou, se preferir PT:
-# Alterar package em todos os arquivos para br.edu.avionica.telemetria
-```
+#### Arquivo de schema SQL
+Criar `src/main/resources/schema.sql` (Spring JDBC executa automaticamente se configurado):
 
-**Por quê:** Em Java, o compilador exige que a hierarquia de diretórios corresponda exatamente ao `package` declarado. A inconsistência atual (diretório `telemetria`, pacote `telemetry`) causa `package does not exist` durante a compilação.
-
----
-
-### 🔴 6.3 Corrigir o Typo no Nome da Classe (URGENTE)
-
-**Problema:** `AircrafTelemetriaServiso` — dois erros de digitação.
-
-**Correção em [AircraftTelemetriaService.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/telemetria/AircraftTelemetriaService.java) (linhas 29–30):**
-```java
-// Antes:
-public class AircrafTelemetriaServiso implements MqttCallbackExtended {
-    private static final Logger logger = LoggerFactory.getLogger(AircrafTelemetriaServiso.class);
-
-// Depois:
-public class AircraftTelemetryService implements MqttCallbackExtended {
-    private static final Logger logger = LoggerFactory.getLogger(AircraftTelemetryService.class);
-```
-
-**Correção em [AircraftDataController.java](file:///C:/projetos/Sistemas_Distribuidos_Avionica/backend/src/main/avionica/api/AircraftDataController.java) (linhas 4, 12, 14):**
-```java
-// Antes:
-import br.edu.avionica.telemetry.AircrafTelemetriaServiso;
-private final AircrafTelemetriaServiso  telemetryService;
-public AircraftDataController(AircrafTelemetriaServiso  telemetryService) {
-
-// Depois:
-import br.edu.avionica.telemetry.AircraftTelemetryService;
-private final AircraftTelemetryService telemetryService;
-public AircraftDataController(AircraftTelemetryService telemetryService) {
-```
-
-**Por quê:** Nomes de classe errados poluem o código, dificultam a busca global, quebram o Javadoc e mostram falta de atenção em código destinado à avaliação acadêmica.
-
----
-
-### 🔴 6.4 Implementar Persistência no PostgreSQL (Alta Prioridade)
-
-**Problema:** O banco está no ar, mas não recebe nenhum dado.
-
-**Melhoria sugerida:** Criar tabela de telemetria e persistir cada mensagem MQTT recebida.
-
-**SQL (criar em `src/main/resources/schema.sql` ou com Flyway):**
-```sql
+```text
 CREATE TABLE IF NOT EXISTS telemetry_events (
     id          BIGSERIAL    PRIMARY KEY,
     topic       VARCHAR(200) NOT NULL,
@@ -377,225 +137,554 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
     received_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_telemetry_topic ON telemetry_events(topic);
-CREATE INDEX IF NOT EXISTS idx_telemetry_received ON telemetry_events(received_at DESC);
-```
+CREATE TABLE IF NOT EXISTS routes (
+    id              BIGSERIAL    PRIMARY KEY,
+    origin_icao     VARCHAR(10)  NOT NULL,
+    destination_icao VARCHAR(10) NOT NULL,
+    distance_nm     NUMERIC(8,2),
+    eta_minutes     INTEGER,
+    status          VARCHAR(50)  NOT NULL DEFAULT 'PENDING',
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
 
-**Java — adicionar ao serviço de telemetria:**
-```java
-// Injetar JdbcTemplate no AircraftTelemetryService
-private final JdbcTemplate jdbc;
-
-// No método messageArrived(), após salvar em memória:
-jdbc.update(
-    "INSERT INTO telemetry_events (topic, payload) VALUES (?, ?)",
-    topic,
-    rawPayload
+CREATE TABLE IF NOT EXISTS system_events (
+    id          BIGSERIAL    PRIMARY KEY,
+    module_name VARCHAR(100) NOT NULL,
+    severity    VARCHAR(20)  NOT NULL,
+    message     TEXT         NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ```
 
-**Por quê:** Sem persistência, o histórico de telemetria desaparece ao reiniciar o container. O requisito da disciplina menciona explicitamente "consultar histórico persistido no banco de dados". O PostgreSQL já está no ar e configurado — só falta usar.
+#### Ativar execução automática no `application.yml`
+```yaml
+spring:
+  sql:
+    init:
+      mode: always   # executa schema.sql ao subir
+```
+
+#### Persistir no serviço de telemetria
+Em `AircraftTelemetryService.java`, injetar `JdbcTemplate` e salvar cada mensagem MQTT:
+
+```text
+// Adicionar ao AircraftTelemetryService:
+private final JdbcTemplate jdbc;
+
+public AircraftTelemetryService(
+    @Value("${app.mqtt.broker-url}") String brokerUrl,
+    @Value("${app.mqtt.topic-filter}") String topicFilter,
+    JdbcTemplate jdbc
+) {
+    this.brokerUrl = brokerUrl;
+    this.topicFilter = topicFilter;
+    this.jdbc = jdbc;
+}
+
+// No método messageArrived(), após salvar em memória:
+try {
+    jdbc.update(
+        "INSERT INTO telemetry_events (topic, payload) VALUES (?, ?)",
+        topic, rawPayload
+    );
+} catch (Exception e) {
+    logger.warn("Falha ao persistir telemetria no banco: {}", e.getMessage());
+}
+```
+
+#### Novo endpoint para histórico
+```text
+// Novo método em AircraftDataController ou novo controller:
+@GetMapping("/api/telemetry/history")
+public List<Map<String, Object>> history(
+    @RequestParam(defaultValue = "100") int limit
+) {
+    return jdbc.queryForList(
+        "SELECT topic, payload, received_at FROM telemetry_events ORDER BY received_at DESC LIMIT ?",
+        limit
+    );
+}
+```
+
+**Por quê é necessário:** O requisito da disciplina cita "consultar histórico persistido no banco de dados". Sem isso, esse requisito fica zero.
 
 ---
 
-### 🟡 6.5 Integrar Kafka ao Backend (Média-Alta Prioridade)
+### 🔴 3.2 Kafka sem Produtores nem Consumidores
 
-**Problema:** Kafka está configurado e rodando, mas sem produtores ou consumidores no backend.
+**Situação atual:** O Kafka está configurado em `build.gradle` e `application.yml`, o container sobe, mas o backend não publica nem consome nenhuma mensagem. O Kafka ocupa ~500MB de RAM sem nenhum benefício.
 
-**Melhoria sugerida:** Criar um consumer Spring Kafka para os tópicos dos sensores Python:
+**O que precisa ser criado:**
 
-```java
+#### Consumer de telemetria via Kafka
+Os módulos Python precisariam publicar também no Kafka (além do MQTT). O backend consumiria do Kafka para garantir que nenhuma mensagem seja perdida durante downtime:
+
+```text
+// Criar: src/main/avionica/kafka/TelemetryKafkaConsumer.java
+package avionica.kafka;
+
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
 @Component
 public class TelemetryKafkaConsumer {
 
-    @KafkaListener(topics = "avionica.telemetry.flight", groupId = "backend-gateway")
-    public void onFlightData(ConsumerRecord<String, String> record) {
+    @KafkaListener(topics = "avionica.telemetry", groupId = "backend-gateway")
+    public void onTelemetryMessage(ConsumerRecord<String, String> record) {
         // processar e salvar no banco
+        logger.info("Kafka → tópico: {} | payload: {}", record.key(), record.value());
     }
 }
 ```
 
-> [!NOTE]
-> Para isso funcionar, os módulos Python também precisariam publicar no Kafka (além ou em vez do MQTT). Esta é uma mudança maior, mas alinha com o plano original do projeto.
+#### Producer para eventos de rota
+Quando o frontend solicitar uma rota, o backend publica no Kafka e o FMS consome:
 
-**Por quê:** O Kafka garante que mensagens sejam **entregues mesmo se o backend estiver offline** (as mensagens ficam no log do Kafka e são reprocessadas ao reconectar). Com MQTT puro, qualquer queda do backend significa perda de dados.
+```text
+// Criar: src/main/avionica/kafka/RouteEventProducer.java
+package avionica.kafka;
 
----
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Component;
 
-### 🟡 6.6 Implementar Health Check Real dos Módulos (Média Prioridade)
+@Component
+public class RouteEventProducer {
+    private final KafkaTemplate<String, String> kafka;
 
-**Problema:** `GET /api/modules` retorna status hardcoded.
+    public RouteEventProducer(KafkaTemplate<String, String> kafka) {
+        this.kafka = kafka;
+    }
 
-**Melhoria sugerida:** Cada módulo Python publica em `avionica/health/<nome>` a cada 10 segundos. O backend monitora o tempo da última mensagem:
-
-```java
-// Verificar se o módulo publicou nos últimos 30 segundos
-public String getModuleStatus(String moduleName) {
-    AircraftMessage last = latestByTopic.get("avionica/health/" + moduleName);
-    if (last == null) return "UNKNOWN";
-    return last.receivedAt().isAfter(Instant.now().minusSeconds(30)) ? "UP" : "DOWN";
+    public void requestRoute(String origin, String destination) {
+        String payload = "{\"origem\":\"" + origin + "\",\"destino\":\"" + destination + "\"}";
+        kafka.send("avionica.route.requested", payload);
+    }
 }
 ```
 
-```python
-# Adicionar a cada módulo Python (exemplo em sensores_voo.py):
-while True:
-    cliente.publish(f"avionica/health/sensor-flight", json.dumps({"ts": time.time()}))
-    # ... resto do loop
-    time.sleep(10)
-```
-
-**Por quê:** Demonstrar monitoramento dinâmico ao professor é um diferencial enorme. Com este mecanismo, é possível derrubar um container ao vivo e mostrar o dashboard mudando de `UP` para `DOWN` em tempo real.
+**Por quê é necessário:** Kafka é o diferencial de um sistema distribuído real. Com MQTT puro, mensagens enviadas enquanto o backend está offline são perdidas para sempre. O Kafka armazena mensagens por tempo configurável e garante entrega mesmo após reinicialização.
 
 ---
 
-### 🟡 6.7 Aumentar o Tamanho do Buffer de Mensagens Recentes (Média Prioridade)
+### 🔴 3.3 Endpoint de Rotas — Não existe
 
-**Problema:** A fila `recentMessages` está limitada a 30 mensagens:
+**Situação atual:** Não há nenhum endpoint `POST /api/routes` ou `GET /api/routes`. O frontend não tem como solicitar uma rota via REST.
+
+**O que precisa ser criado:**
+
+```text
+// Criar: src/main/avionica/api/RouteController.java
+package avionica.api;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.bind.annotation.*;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/routes")
+public class RouteController {
+
+    private final JdbcTemplate jdbc;
+
+    public RouteController(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    // Solicitar nova rota
+    @PostMapping
+    public Map<String, Object> requestRoute(@RequestBody Map<String, String> body) {
+        String origin = body.get("origin").toUpperCase();
+        String destination = body.get("destination").toUpperCase();
+
+        // Salva a solicitação no banco
+        jdbc.update(
+            "INSERT INTO routes (origin_icao, destination_icao, status) VALUES (?, ?, 'PENDING')",
+            origin, destination
+        );
+
+        // Publica no MQTT para o FMS Python calcular
+        // (ou no Kafka, se implementado)
+
+        return Map.of("status", "PENDING", "origin", origin, "destination", destination);
+    }
+
+    // Listar rotas calculadas
+    @GetMapping
+    public List<Map<String, Object>> listRoutes() {
+        return jdbc.queryForList(
+            "SELECT * FROM routes ORDER BY created_at DESC LIMIT 50"
+        );
+    }
+}
+```
+
+**Por quê é necessário:** Sem este endpoint, o fluxo principal do projeto (usuário solicita rota → FMS calcula → resultado exibido) não existe na camada web.
+
+---
+
+### 🟡 3.4 Health Check Real dos Módulos
+
+**Situação atual:** `GET /api/modules` retorna sempre a mesma lista estática com status `PLANNED` para todos os módulos Python — mesmo quando eles estão rodando.
+
+```text
+// Hoje (hardcoded — incorreto):
+module("fms-api", "Python", "PLANNED"),       // sempre PLANNED
+module("sensor-flight", "Python", "PLANNED"), // sempre PLANNED
+```
+
+**O que precisa ser criado:**
+
+Cada módulo Python publica periodicamente em `avionica/health/<nome>`. O backend monitora o tempo da última mensagem:
+
+```text
+// Em HealthController.java — substituir a lista hardcoded:
+@Autowired
+private AircraftTelemetryService telemetry;
+
+@GetMapping("/modules")
+public List<Map<String, Object>> modules() {
+    return List.of(
+        moduleWithCheck("fms-api",             "Python"),
+        moduleWithCheck("sensor-flight",       "Python"),
+        moduleWithCheck("sensor-brake",        "Python"),
+        moduleWithCheck("radar",               "Python"),
+        moduleWithCheck("navigation-computer", "Python"),
+        moduleWithCheck("automation-computer", "Python"),
+        moduleWithCheck("waic-leader",         "Python"),
+        module("backend-gateway", "Spring Boot", "UP"),
+        module("postgres",        "PostgreSQL",  "INFRASTRUCTURE"),
+        module("kafka",           "Apache Kafka","INFRASTRUCTURE", kafkaBootstrapServers),
+        module("mqtt-broker",     "Mosquitto",   "INFRASTRUCTURE")
+    );
+}
+
+private Map<String, Object> moduleWithCheck(String name, String tech) {
+    // Verifica se publicou nos últimos 30 segundos
+    String heartbeatTopic = "avionica/health/" + name;
+    String status = telemetry.isAlive(heartbeatTopic) ? "UP" : "DOWN";
+    return module(name, tech, status);
+}
+```
+
+Adicionar ao `AircraftTelemetryService.java`:
+```text
+public boolean isAlive(String heartbeatTopic) {
+    AircraftMessage last = latestByTopic.get(heartbeatTopic);
+    return last != null && last.receivedAt().isAfter(Instant.now().minusSeconds(30));
+}
+```
+
+Adicionar a cada módulo Python (exemplo `sensores_voo.py`):
+```text
+# No loop principal, a cada 10 segundos:
+cliente.publish("avionica/health/sensor-flight", json.dumps({"ts": time.time()}))
+```
+
+**Por quê é necessário:** Demonstrar monitoramento dinâmico é o diferencial mais visual do projeto. Derrubar um container ao vivo e mostrar o status mudando de `UP` para `DOWN` na tela impressiona muito mais do que uma lista estática.
+
+---
+
+### 🟡 3.5 Buffer de Mensagens Muito Pequeno
+
+**Situação atual:** A fila de mensagens recentes está limitada a **30 itens**:
 
 ```java
-// AircraftTelemetriaService.java, linha 119
+// AircraftTelemetryService.java linha 119
 while (recentMessages.size() > 30) {
     recentMessages.removeFirst();
 }
 ```
 
-Com ~7 módulos publicando a cada 1–3 segundos, 30 mensagens correspondem a apenas **4–10 segundos** de histórico.
+Com 7 módulos publicando a cada 1–3 segundos, 30 mensagens correspondem a apenas **4–6 segundos** de histórico. Praticamente inútil para visualização.
 
-**Melhoria:** Aumentar para 200–500 e tornar configurável:
+**O que mudar:**
 
-```java
-// application.yml
+```yaml
+# No application.yml — adicionar:
 app:
   telemetry:
-    buffer-size: ${TELEMETRY_BUFFER_SIZE:200}
+    buffer-size: ${TELEMETRY_BUFFER_SIZE:300}
+```
 
-// No serviço:
-@Value("${app.telemetry.buffer-size:200}")
+```text
+// No AircraftTelemetryService.java — usar o valor configurável:
+@Value("${app.telemetry.buffer-size:300}")
 private int bufferSize;
 
-// No método messageArrived():
+// E na linha do limite:
 while (recentMessages.size() > bufferSize) {
     recentMessages.removeFirst();
 }
 ```
 
-**Por quê:** Um buffer de 10 segundos é insuficiente para qualquer análise ou demonstração significativa. Com 200 mensagens, o frontend pode mostrar um histórico visual dos últimos 3–5 minutos de voo sem precisar de banco de dados.
+**Por quê é necessário:** 300 mensagens = aproximadamente 5 minutos de histórico em memória, suficiente para exibir um gráfico ou tabela de últimos eventos no frontend sem precisar de banco de dados.
 
 ---
 
-### 🟡 6.8 Remover a Configuração Duplicada do Kafka no `application.yml` (Baixa Esforço)
+### 🟡 3.6 Configuração Duplicada do Kafka no `application.yml`
 
-**Problema:** O Kafka está configurado duas vezes no `application.yml`:
+**Situação atual:** O Kafka aparece **duas vezes** no `application.yml`:
 
 ```yaml
 spring:
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}  # ← Config Spring padrão
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}   # config Spring oficial
 
 app:
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}  # ← Config customizada (usada no HealthController)
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}   # config custom (só usada no HealthController)
 ```
 
-**Melhoria:** Se for usar o Kafka via Spring (com `@KafkaListener`), remover a chave `app.kafka` e usar apenas `spring.kafka`. Se não for usar o Kafka, remover as duas e remover a dependência do `build.gradle`:
+**O que mudar:**
 
-```groovy
-// Remover do build.gradle se Kafka não for implementado:
-// implementation 'org.springframework.kafka:spring-kafka'
+Se o Kafka for implementado com `@KafkaListener`, remover `app.kafka` e usar apenas `spring.kafka`.
+Atualizar `HealthController` para ler de `spring.kafka.bootstrap-servers`:
+
+```text
+// Em HealthController.java — trocar:
+public HealthController(@Value("${app.kafka.bootstrap-servers}") String kafkaBootstrapServers)
+
+// Por:
+public HealthController(@Value("${spring.kafka.bootstrap-servers}") String kafkaBootstrapServers)
 ```
 
-**Por quê:** Configuração duplicada gera confusão sobre qual é a "oficial". O `HealthController` lê `app.kafka.bootstrap-servers` apenas para exibir o endereço na lista de módulos — o Spring Kafka em si não lê essa chave.
+**Por quê é necessário:** Evitar confusão sobre qual configuração é a "oficial". Com dois valores, uma mudança no `.env` precisa ser replicada em dois lugares, o que é propenso a erro.
 
 ---
 
-### 🟢 6.9 Adicionar WebSocket/SSE para Telemetria em Tempo Real (Diferencial)
+### 🟡 3.7 Módulos Java Previstos no Plano que Não Existem
 
-**Problema:** O frontend faz polling HTTP para buscar dados novos (gera latência e carga desnecessária).
+O plano original (`etc/plano-reestruturacao-sistema-distribuido.md`) prevê **8 serviços Java** além do backend-gateway. Nenhum foi implementado:
 
-**Melhoria sugerida:** Usar Server-Sent Events (SSE), mais simples que WebSocket e nativo do Spring MVC:
+| Serviço Java Previsto | Package sugerido | Responsabilidade |
+|---|---|---|
+| Serviço de Rotas | `avionica.routes` | Gerenciar histórico de rotas no banco |
+| Serviço de Telemetria | `avionica.telemetry` | Persistir e consultar dados de sensores |
+| Serviço de Eventos | `avionica.events` | Registrar eventos técnicos |
+| Serviço de Alertas | `avionica.alerts` | Gerar alertas a partir de limites ultrapassados |
+| Serviço de Auditoria | `avionica.audit` | Registrar ações do usuário |
+| Serviço de Relatórios | `avionica.reports` | Consultas e relatórios operacionais |
+| Serviço de Status | `avionica.status` | Monitorar saúde dos módulos |
+| Serviço de Notificações | `avionica.notifications` | Enviar notificações ao frontend |
 
-```java
-@GetMapping(value = "/api/telemetry/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public SseEmitter streamTelemetry() {
-    SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
-    // registrar emitter e enviar quando chegarem novas mensagens MQTT
-    return emitter;
-}
-```
-
-**Por quê:** Com SSE, o browser recebe dados instantaneamente ao chegar do MQTT, sem polling. Isso cria uma experiência de dashboard "ao vivo" muito mais impressionante para a apresentação do projeto.
-
----
-
-## 7. Resumo das Ações Necessárias
-
-| Prioridade | Ação | Arquivo(s) | Impacto |
-|---|---|---|---|
-| 🔴 URGENTE | Corrigir localização dos arquivos (`src/main/java/` ou configurar source set) | `build.gradle` | Projeto não compila sem isso |
-| 🔴 URGENTE | Corrigir conflito `telemetria/` vs. `package telemetry` | Todos em `telemetria/` | Erro de compilação |
-| 🔴 URGENTE | Corrigir typo `AircrafTelemetriaServiso` → `AircraftTelemetryService` | `AircraftTelemetriaService.java`, `AircraftDataController.java` | Qualidade + compilação |
-| 🔴 Alta | Persistir telemetria no PostgreSQL | `AircraftTelemetriaService.java` + SQL | Requisito da disciplina |
-| 🟡 Média | Integrar Kafka ao backend | Novo `TelemetryKafkaConsumer.java` | Requisito da disciplina |
-| 🟡 Média | Health check real dos módulos | `HealthController.java` + módulos Python | Demonstração ao professor |
-| 🟡 Média | Aumentar buffer de mensagens para 200+ | `AircraftTelemetriaService.java` | Qualidade da demonstração |
-| 🟡 Média | Limpar configuração duplicada do Kafka | `application.yml`, `build.gradle` | Clareza do código |
-| 🟢 Baixa | SSE/WebSocket para telemetria em tempo real | Novo controller SSE | Diferencial de UX |
+> [!IMPORTANT]
+> Para a avaliação da disciplina, o projeto precisa de **18+ módulos independentes** para uma equipe de 9 pessoas. Hoje existem apenas 12 containers (incluindo infraestrutura). Implementar esses serviços Java é essencial para atingir a contagem.
 
 ---
 
-## 8. Como Corrigir os Problemas Críticos Rapidamente
+### 🟡 3.8 Módulos Python que Faltam (previstos no plano)
 
-### Opção 1 — Mover arquivos de volta para o local padrão
+| Módulo Python Previsto | Arquivo | Status |
+|---|---|---|
+| Sensor de Altitude | `sensor_altitude.py` | ❌ Embutido no `sensores_voo.py` |
+| Sensor de Atitude (pitch/roll/yaw) | `sensor_atitude.py` | ❌ Não existe |
+| Sensor de Combustível | `sensor_combustivel.py` | ❌ Embutido no `sensores_voo.py` |
+| Sensor de Velocidade | `sensor_velocidade.py` | ❌ Embutido no `sensores_voo.py` |
+| Simulador de Piloto/CDU | `simulador_piloto_cdu.py` | ⚠️ Apenas `injetor_falhas.py` |
+| Computador de Voo (containerizado) | `computador_voo.py` | ⚠️ Só roda como desktop (Tkinter) |
+| Caixa Preta (FDR) | `caixa_preta.py` | ⚠️ Existe mas não está no docker-compose |
 
-```powershell
-# Executar na raiz do projeto
-New-Item -ItemType Directory -Force -Path "backend\src\main\java\br\edu\avionica\api"
-New-Item -ItemType Directory -Force -Path "backend\src\main\java\br\edu\avionica\config"
-New-Item -ItemType Directory -Force -Path "backend\src\main\java\br\edu\avionica\telemetry"
+> [!NOTE]
+> Separar `sensores_voo.py` em 4 módulos (velocidade, altitude, combustível, atitude) é a forma mais rápida de aumentar a contagem de módulos sem adicionar complexidade — cada sensor vira um container independente.
 
-Copy-Item "backend\src\main\avionica\AvionicaBackendApplication.java" `
-          "backend\src\main\java\br\edu\avionica\"
+---
 
-Copy-Item "backend\src\main\avionica\api\*" `
-          "backend\src\main\java\br\edu\avionica\api\"
+### 🟢 3.9 CORS restrito a localhost
 
-Copy-Item "backend\src\main\avionica\config\*" `
-          "backend\src\main\java\br\edu\avionica\config\"
+**Situação atual:** O `CorsConfig.java` libera CORS apenas para `localhost:5173`:
 
-Copy-Item "backend\src\main\avionica\telemetria\*" `
-          "backend\src\main\java\br\edu\avionica\telemetry\"
+```text
+.allowedOrigins("http://localhost:5173", "http://127.0.0.1:5173")
 ```
 
-Depois atualizar as declarações de pacote nos arquivos da pasta `telemetry/` para:
-```java
-package br.edu.avionica.telemetry;  // já está correto nos arquivos
-```
+**O que mudar:** Tornar as origens configuráveis por variável de ambiente para funcionar em ambiente de demonstração/apresentação:
 
-### Opção 2 — Manter a pasta customizada com configuração no Gradle
+```text
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
 
-```groovy
-// Adicionar ao backend/build.gradle
-sourceSets {
-    main {
-        java {
-            srcDirs = ['src/main/avionica']
-        }
-        resources {
-            srcDirs = ['src/main/resources']
-        }
+    @Value("${app.cors.allowed-origins:http://localhost:5173}")
+    private String[] allowedOrigins;
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+            .allowedOrigins(allowedOrigins)
+            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            .allowedHeaders("*");
     }
 }
 ```
 
-E renomear `telemetria/` → `telemetry/` para alinhar com os packages declarados.
+```yaml
+# application.yml
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+```
+
+**Por quê é necessário:** Na apresentação do projeto, o professor pode acessar pelo IP da máquina (ex: `http://192.168.x.x:5173`). O CORS vai bloquear todas as chamadas REST se a origem não estiver na lista.
 
 ---
 
-## 9. Referências Técnicas
+### 🟢 3.10 Sem WebSocket ou SSE — Frontend faz polling
 
-- [Gradle Java Plugin — Source Sets](https://docs.gradle.org/current/userguide/java_plugin.html#sec:java_project_layout)
-- [Spring Boot Kafka Integration](https://docs.spring.io/spring-kafka/reference/)
-- [Spring MVC Server-Sent Events](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-sse)
-- [Eclipse Paho MQTT v3 — CleanSession vs Persistent Sessions](https://www.eclipse.org/paho/index.php?page=clients/java/index.php)
-- [Flyway + Spring Boot](https://flywaydb.org/documentation/usage/plugins/springboot)
+**Situação atual:** O frontend precisa chamar `GET /api/aircraft-data` repetidamente (polling) para atualizar os dados. Isso causa latência artificial e carga desnecessária.
+
+**O que implementar:** Server-Sent Events (SSE) — mais simples que WebSocket, nativo do Spring MVC:
+
+```text
+// Criar: src/main/avionica/api/TelemetryStreamController.java
+package avionica.api;
+
+import avionica.telemetry.AircraftTelemetryService;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+@RestController
+public class TelemetryStreamController {
+
+    private final AircraftTelemetryService telemetry;
+
+    public TelemetryStreamController(AircraftTelemetryService telemetry) {
+        this.telemetry = telemetry;
+    }
+
+    @GetMapping(value = "/api/telemetry/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
+        telemetry.registerEmitter(emitter);
+        return emitter;
+    }
+}
+```
+
+**Por quê é necessário:** Com SSE, o browser recebe dados instantaneamente ao chegar do MQTT, sem polling. O dashboard fica verdadeiramente "ao vivo" — muito mais impactante para a apresentação.
+
+---
+
+## 4. Roadmap Priorizado — O que fazer e em que ordem
+
+```
+SEMANA ATUAL — Compilação e estrutura
+  ✅ Source set Gradle corrigido
+  ✅ Packages alinhados (avionica.*)
+  ✅ Typos corrigidos
+  ✅ Build SUCCESSFUL
+
+PRÓXIMOS PASSOS — Por prioridade de impacto na nota
+
+  🔴 ALTA PRIORIDADE
+  ├── [ ] 3.1  Criar schema.sql + tabela telemetry_events
+  ├── [ ] 3.1  Persistir mensagens MQTT no PostgreSQL (JdbcTemplate)
+  ├── [ ] 3.1  Endpoint GET /api/telemetry/history
+  ├── [ ] 3.3  Criar RouteController (POST /api/routes + GET /api/routes)
+  └── [ ] 3.8  Separar sensores Python em módulos individuais (altitude, velocidade, combustível, atitude)
+
+  🟡 MÉDIA PRIORIDADE
+  ├── [ ] 3.4  Health check real — heartbeat nos módulos Python
+  ├── [ ] 3.4  isAlive() no AircraftTelemetryService
+  ├── [ ] 3.5  Aumentar buffer para 300 mensagens (configurável)
+  ├── [ ] 3.6  Remover duplicação do Kafka no application.yml
+  └── [ ] 3.7  Criar ao menos 2–3 serviços Java extras (eventos, alertas, status)
+
+  🟢 BAIXA PRIORIDADE / DIFERENCIAL
+  ├── [ ] 3.2  Implementar @KafkaListener e KafkaTemplate
+  ├── [ ] 3.9  CORS configurável por variável de ambiente
+  └── [ ] 3.10 SSE para telemetria em tempo real
+```
+
+---
+
+## 5. Contagem de Módulos — Situação Atual vs. Meta
+
+| # | Módulo | Tecnologia | Container | Conta? |
+|---|---|---|---|---|
+| 1 | Frontend Web | Vue.js | `avionica_frontend` | ✅ Sim |
+| 2 | Backend Gateway | Spring Boot | `avionica_backend_gateway` | ✅ Sim |
+| 3 | FMS API | Python | `avionica_fms_api` | ✅ Sim |
+| 4 | Sensor de Voo (velocidade+altitude+combustível) | Python | `avionica_sensor_flight` | ⚠️ Conta como 1 |
+| 5 | Sensor de Freio | Python | `avionica_sensor_brake` | ✅ Sim |
+| 6 | Radar Externo | Python | `avionica_radar` | ✅ Sim |
+| 7 | Computador de Navegação | Python | `avionica_navigation_computer` | ✅ Sim |
+| 8 | Computador de Automação | Python | `avionica_automation_computer` | ✅ Sim |
+| 9 | Líder WAIC | Python | `avionica_waic_leader` | ✅ Sim |
+| — | PostgreSQL | Infraestrutura | `avionica_postgres` | ❌ Não conta |
+| — | Kafka | Infraestrutura | `avionica_kafka` | ❌ Não conta |
+| — | Mosquitto | Infraestrutura | `avionica_mqtt_broker` | ❌ Não conta |
+
+**Total atual: 9 módulos de aplicação** (meta para 9 pessoas: **18 módulos**)
+
+**Para atingir 18 módulos, é necessário adicionar:**
+
+| Módulo a criar | Esforço | Como criar |
+|---|---|---|
+| Sensor de Velocidade | Baixo | Separar de `sensores_voo.py` |
+| Sensor de Altitude | Baixo | Separar de `sensores_voo.py` |
+| Sensor de Combustível | Baixo | Separar de `sensores_voo.py` |
+| Sensor de Atitude (pitch/roll/yaw) | Baixo | Novo arquivo Python |
+| Serviço de Rotas (Java) | Médio | `RouteController` + tabela `routes` |
+| Serviço de Eventos (Java) | Médio | Controller + tabela `system_events` |
+| Serviço de Alertas (Java) | Médio | Regras sobre telemetria (combustível < 20%, pressão < 50 psi) |
+| Serviço de Status (Java) | Médio | Health check real com heartbeat |
+| Simulador de Piloto/CDU | Baixo | Containerizar `injetor_falhas.py` |
+
+**Com esses 9 adicionais: total = 18 módulos ✅**
+
+---
+
+## 6. Estrutura de Arquivos — Estado Completo
+
+### 6.1 Arquivos existentes hoje
+
+```
+backend/src/main/
+├── avionica/
+│   ├── AvionicaBackendApplication.java   ✅ package avionica
+│   ├── api/
+│   │   ├── AircraftDataController.java   ✅ GET /api/aircraft-data
+│   │   └── HealthController.java         ⚠️ status hardcoded
+│   ├── config/
+│   │   ├── CorsConfig.java               ⚠️ origem fixa (localhost:5173)
+│   │   └── StartupLogger.java            ✅ ok
+│   └── telemetry/
+│       ├── AircraftDataSnapshot.java     ✅ record imutável
+│       ├── AircraftMessage.java          ✅ record imutável
+│       └── AircraftTelemetryService.java ✅ MQTT + snapshot em memória
+└── resources/
+    └── application.yml                   ✅ configurações por variável de ambiente
+```
+
+### 6.2 Arquivos que precisam ser criados
+
+```
+backend/src/main/
+├── avionica/
+│   ├── api/
+│   │   ├── RouteController.java          ❌ POST/GET /api/routes
+│   │   ├── TelemetryHistoryController.java ❌ GET /api/telemetry/history
+│   │   └── TelemetryStreamController.java  ❌ GET /api/telemetry/stream (SSE)
+│   ├── kafka/
+│   │   ├── TelemetryKafkaConsumer.java   ❌ @KafkaListener
+│   │   └── RouteEventProducer.java       ❌ KafkaTemplate
+│   └── service/
+│       ├── RouteService.java             ❌ lógica de negócio das rotas
+│       ├── AlertService.java             ❌ regras de alerta
+│       └── ModuleStatusService.java      ❌ health check real
+└── resources/
+    └── schema.sql                        ❌ DDL das tabelas
+```
+
+---
+
+## 7. Referências
+
+- [Spring JDBC — JdbcTemplate](https://docs.spring.io/spring-framework/reference/data-access/jdbc/core.html)
+- [Spring Kafka — @KafkaListener](https://docs.spring.io/spring-kafka/reference/)
+- [Spring MVC — Server-Sent Events](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-sse)
+- [Spring Boot — schema.sql automático](https://docs.spring.io/spring-boot/reference/data/sql.html#data.sql.datasource.initialization)
+- [Paho MQTT — MqttCallbackExtended](https://www.eclipse.org/paho/index.php?page=clients/java/index.php)

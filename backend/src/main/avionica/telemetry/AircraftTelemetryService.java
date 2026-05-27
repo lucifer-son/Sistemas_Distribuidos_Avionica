@@ -25,14 +25,21 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+// Responsavel por escutar os sensores dos arquivos python
 @Service
 public class AircraftTelemetryService implements MqttCallbackExtended {
+
+    //Sistema de logs diponibilizado pelo slf4j
     private static final Logger logger = LoggerFactory.getLogger(AircraftTelemetryService.class);
 
+    //Endereço do broker MQTT e filtro de tópico
     private final String brokerUrl;
     private final String topicFilter;
+
+    //Dicionario e fila
     private final Map<String, AircraftMessage> latestByTopic = new ConcurrentHashMap<>();
     private final Deque<AircraftMessage> recentMessages = new ArrayDeque<>();
+
     private MqttClient client;
 
     public AircraftTelemetryService(

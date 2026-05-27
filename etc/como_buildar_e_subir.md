@@ -276,7 +276,7 @@ Após subir, abra os seguintes endereços no navegador:
     "pressao_motor": 218.5,
     "temperatura": 99.1
   },
-  "rawMessages": [ ... ]
+  "rawMessages": [ "..." ]
 }
 ```
 
@@ -416,6 +416,25 @@ Ou altere a porta no `docker-compose.yml`:
 ports:
   - "8081:8080"   # Muda de 8080 para 8081 no host
 ```
+
+---
+
+### ❌ IntelliJ: `@Service`, `@RestController` ou imports em vermelho / `Cannot find declaration to go to` ao clicar
+
+**Causa:**
+O IntelliJ abriu a pasta raiz do projeto completo (`Sistemas_Distribuidos_Avionica`), mas não sincronizou o subdiretório `backend` como um projeto Gradle. Por conta disso, a IDE não reconhece o código-fonte Java nem baixa as dependências do Spring Boot e outras bibliotecas.
+
+**Como resolver:**
+1. No IntelliJ, abra a aba lateral do **Gradle** (geralmente localizada no canto direito da tela).
+2. Clique no ícone de **+** (ou "Add Gradle Project").
+3. Selecione o arquivo `backend/build.gradle` na árvore de arquivos.
+4. Aguarde o IntelliJ sincronizar o projeto (você verá uma barra de progresso no canto inferior direito baixando os JARs).
+5. *Alternativa:* Se preferir trabalhar apenas no Java, vá em `File -> Open` no IntelliJ e abra diretamente a pasta `backend/` como a raiz do projeto.
+
+**Como saber se deu certo:**
+- A pasta `src/main/avionica` ficará na cor **azul** (indicando que é reconhecida como Source Root).
+- As anotações `@Service`, `@RestController` e os imports deixarão de ficar vermelhos.
+- Ao segurar a tecla `Ctrl` e clicar sobre uma anotação como `@Service`, o IntelliJ irá navegar com sucesso para a declaração da classe.
 
 ---
 
