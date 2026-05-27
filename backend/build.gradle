@@ -13,6 +13,17 @@ java {
     }
 }
 
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'

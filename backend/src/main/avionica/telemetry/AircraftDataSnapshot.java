@@ -1,4 +1,4 @@
-package br.edu.avionica.telemetry;
+package avionica.telemetry;
 
 import java.time.Instant;
 import java.util.List;

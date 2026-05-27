@@ -29,4 +29,4 @@ management:
 logging:
   level:
     root: WARN
-    br.edu.avionica: INFO
+    avionica: INFO

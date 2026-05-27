@@ -1,4 +1,4 @@
-package br.edu.avionica.api;
+package avionica.api;
 
 import java.time.Instant;
 import java.util.List;

@@ -1,4 +1,4 @@
-package br.edu.avionica.telemetry;
+package avionica.telemetry;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;

@@ -1,7 +1,7 @@
-package br.edu.avionica.api;
+package avionica.api;
 
-import br.edu.avionica.telemetry.AircraftDataSnapshot;
-import br.edu.avionica.telemetry.AircraftTelemetryService;
+import avionica.telemetry.AircraftDataSnapshot;
+import avionica.telemetry.AircraftTelemetryService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;

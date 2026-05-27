@@ -1,4 +1,4 @@
-package br.edu.avionica;
+package avionica;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

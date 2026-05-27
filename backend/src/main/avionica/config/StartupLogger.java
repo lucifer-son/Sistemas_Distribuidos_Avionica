@@ -1,4 +1,4 @@
-package br.edu.avionica.config;
+ package avionica.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
