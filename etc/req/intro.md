@@ -1,144 +1,128 @@
 # Introducao e Fluxo do Sistema
 
-## Visao Geral
+## Ideia Principal
 
-O sistema e uma plataforma distribuida de monitoramento avionico. Ele simula sensores e sistemas de uma aeronave, envia os dados por mensageria, processa essas informacoes no backend e disponibiliza tudo em uma interface web.
+O sistema e uma plataforma distribuida de monitoramento avionico.
 
-A arquitetura proposta e orientada a mensagens. Os modulos produtores nao enviam os dados diretamente para o backend por chamada HTTP. Em vez disso, eles publicam mensagens em topicos Kafka. O backend consome essas mensagens, aplica regras de negocio, salva os dados no banco e disponibiliza os recursos para o frontend.
+A ideia central e:
 
-## Por Que o Sistema e Orientado a Mensagens
+1. As APIs e simuladores geram dados dos sensores da aeronave.
+2. Esses dados sao publicados no Kafka.
+3. O backend Spring Boot, que e unico, consome os dados do Kafka.
+4. O backend salva os dados no PostgreSQL.
+5. O frontend web em Vue acessa o backend por REST.
 
-O sistema pode ser considerado orientado a mensagens porque:
+## O Sistema E Orientado a Mensagens?
 
-- os dados dos sensores sao enviados como mensagens;
-- o Kafka funciona como barramento entre produtores e consumidores;
-- os produtores nao precisam conhecer os consumidores;
-- o backend processa os dados de forma assincrona;
-- novos consumidores podem ser adicionados sem alterar os produtores;
-- falhas em um consumidor nao impedem imediatamente os produtores de publicarem dados.
+Sim.
 
-O frontend Vue nao consome Kafka diretamente. Ele acessa o backend Spring Boot por API REST, o que mantem a interface desacoplada da mensageria e do banco de dados.
+Ele e orientado a mensagens porque os dados nao vao direto dos sensores para o backend por chamada HTTP. Os sensores e APIs publicam mensagens em topicos Kafka. Depois, o backend consome essas mensagens.
 
-## Fluxo Principal
+Isso cria desacoplamento:
 
-1. Os modulos de API/simuladores geram dados de sensores, radar, motor, freio, rota e falhas.
-2. Esses modulos publicam mensagens nos topicos Kafka.
-3. O Kafka recebe e organiza as mensagens por topico.
-4. O backend Spring Boot consome as mensagens do Kafka.
-5. O backend valida, processa e transforma os dados recebidos.
-6. O backend salva os dados processados no PostgreSQL.
-7. O frontend Vue chama endpoints REST do backend.
-8. O usuario visualiza telemetria, historico, rotas, alertas, eventos e status dos modulos pela interface web.
+- quem gera os dados nao precisa saber quem vai consumir;
+- o backend pode processar mensagens de forma assincrona;
+- outros consumidores podem ser adicionados depois;
+- o Kafka funciona como barramento de mensagens do sistema.
+
+## O Que Existe no Projeto
+
+O projeto tera:
+
+- APIs/simuladores produtores de dados;
+- Kafka como barramento de mensagens;
+- um unico backend Spring Boot;
+- PostgreSQL como banco de dados;
+- frontend web em Vue.js.
+
+## O Que Conta Como Modulo
+
+Conta como modulo:
+
+- API/simulador rodando como processo separado;
+- produtor Kafka desenvolvido pela equipe;
+- consumidor Kafka desenvolvido pela equipe;
+- backend Spring Boot unico;
+- frontend Vue web.
+
+Nao conta como modulo:
+
+- Kafka;
+- PostgreSQL;
+- Docker;
+- Docker Compose;
+- `service`;
+- `dto`;
+- `model`;
+- tela Vue separada;
+- componente Vue separado.
 
 ## Diagrama do Sistema
 
 ```mermaid
 flowchart LR
-    Usuario["Usuario"] --> Frontend["Frontend Web Vue.js"]
-    Frontend -->|"HTTP/REST"| Backend["Backend Spring Boot"]
+    Usuario["Usuario"] -->|"acessa pelo navegador"| Frontend["Frontend Web Vue.js"]
+    Frontend -->|"HTTP/REST"| Backend["Backend Spring Boot unico"]
 
-    subgraph Produtores["APIs e Simuladores Produtores"]
-        SensorVoo["API Telemetria de Voo"]
-        SensorFreio["API Dados de Freio"]
-        FMS["API/FMS Rotas"]
-        Radar["API Radar e Clima"]
-        WAIC["API WAIC/Motor"]
-        Falhas["API Injetora de Falhas"]
+    subgraph Produtores["APIs e simuladores produtores"]
+        Voo["API/Sensor de Voo"]
+        Freio["API/Sensor de Freio"]
+        Radar["API/Radar e Clima"]
+        FMS["API/FMS de Rotas"]
+        WAIC["API/WAIC Motor"]
+        Falhas["API/Injetor de Falhas"]
+        Navegacao["Computador de Navegacao"]
+        Automacao["Computador de Automacao"]
     end
 
-    subgraph Mensageria["Barramento de Mensagens"]
-        Kafka["Kafka"]
-    end
+    Kafka["Kafka - barramento de mensagens"]
+    Banco["PostgreSQL - banco de dados"]
 
-    subgraph BackendServicos["Backend Consumidor e Processador"]
-        ConsumerTelemetria["Consumidor de Telemetria"]
-        ConsumerEventos["Consumidor de Eventos"]
-        ServiceAlertas["Servico de Alertas"]
-        ServiceRotas["Servico de Rotas"]
-        ServiceStatus["Servico de Status"]
-        ServicePersistencia["Servico de Persistencia"]
-    end
+    Voo -->|"mensagem"| Kafka
+    Freio -->|"mensagem"| Kafka
+    Radar -->|"mensagem"| Kafka
+    FMS -->|"mensagem"| Kafka
+    WAIC -->|"mensagem"| Kafka
+    Falhas -->|"mensagem"| Kafka
+    Navegacao -->|"mensagem"| Kafka
+    Automacao -->|"mensagem"| Kafka
 
-    Banco["PostgreSQL"]
-
-    SensorVoo -->|"avionica.telemetry.flight"| Kafka
-    SensorFreio -->|"avionica.telemetry.brake"| Kafka
-    FMS -->|"avionica.route.calculated"| Kafka
-    Radar -->|"avionica.telemetry.radar"| Kafka
-    WAIC -->|"avionica.telemetry.waic"| Kafka
-    Falhas -->|"avionica.system.events"| Kafka
-
-    Kafka --> ConsumerTelemetria
-    Kafka --> ConsumerEventos
-    Kafka --> ServiceAlertas
-    Kafka --> ServiceRotas
-    Kafka --> ServiceStatus
-
-    ConsumerTelemetria --> ServicePersistencia
-    ConsumerEventos --> ServicePersistencia
-    ServiceAlertas --> ServicePersistencia
-    ServiceRotas --> ServicePersistencia
-    ServiceStatus --> ServicePersistencia
-    ServicePersistencia --> Banco
-
-    Backend --> ConsumerTelemetria
-    Backend --> ConsumerEventos
-    Backend --> ServiceAlertas
-    Backend --> ServiceRotas
-    Backend --> ServiceStatus
-    Backend --> Banco
+    Kafka -->|"consome mensagens"| Backend
+    Backend -->|"salva e consulta dados"| Banco
 ```
 
-## Responsabilidades por Camada
+## Explicacao do Diagrama
 
-### API e Simuladores
+O backend nao esta dividido em varios backends. Existe apenas um backend Spring Boot.
 
-Responsaveis por gerar os dados do dominio avionico:
+Dentro desse backend podem existir classes, pacotes e camadas como:
 
-- telemetria de voo;
-- freios;
-- radar e clima;
-- motor/WAIC;
-- planejamento de rota;
-- falhas e eventos.
+- `controller`;
+- `service`;
+- `dto`;
+- `model`;
+- `repository`;
+- `KafkaListener`.
 
-Esses modulos atuam como produtores de mensagens.
+Essas partes sao internas ao backend e nao contam como modulos separados.
 
-### Kafka
+O frontend tambem e um unico modulo Vue. As telas de dashboard, CDU, telemetria, historico e status sao partes internas desse frontend.
 
-Responsavel por receber, organizar e distribuir mensagens entre os modulos. Ele e infraestrutura de mensageria e nao deve ser contado como modulo da equipe, mas os produtores e consumidores desenvolvidos pela equipe contam.
+## Fluxo de Dados
 
-### Backend Spring Boot
+1. Um sensor ou simulador gera uma leitura.
+2. Essa leitura vira uma mensagem.
+3. A mensagem e publicada no Kafka.
+4. O backend Spring Boot consome a mensagem.
+5. O backend valida e processa a informacao.
+6. O backend salva a informacao no PostgreSQL.
+7. O frontend Vue solicita os dados ao backend por REST.
+8. O usuario visualiza os dados na interface web.
 
-Responsavel por:
+## Resumo
 
-- consumir mensagens do Kafka;
-- aplicar regras de negocio;
-- gerar alertas;
-- organizar dados em DTOs;
-- persistir informacoes no banco;
-- expor endpoints REST para o frontend.
+O sistema e distribuido porque possui varios processos independentes gerando e consumindo dados.
 
-As camadas `model`, `dto` e `service` fazem parte da organizacao interna do backend e nao contam como modulos distribuidos separadamente.
+O sistema e orientado a mensagens porque a comunicacao principal entre sensores/APIs e backend acontece por Kafka.
 
-### Banco de Dados
-
-Responsavel por armazenar historico de telemetria, eventos, rotas, alertas e status dos modulos. O banco nao conta como modulo distribuido.
-
-### Frontend Vue
-
-Responsavel por permitir que o usuario acesse as funcionalidades do sistema pela web:
-
-- dashboard;
-- telemetria;
-- historico;
-- rotas/CDU;
-- alertas;
-- eventos;
-- status dos modulos.
-
-O frontend conta como modulo de interface grafica, mas suas telas internas nao devem ser apresentadas como processos distribuidos independentes.
-
-## Conclusao
-
-A arquitetura esta alinhada com um sistema orientado a mensagens, pois o Kafka fica no centro da comunicacao assincrona entre os produtores de dados e o backend consumidor. O backend concentra a persistencia e as regras de negocio, enquanto o frontend Vue acessa tudo por API REST.
+O backend Spring Boot e unico. O frontend Vue tambem e unico. Kafka e PostgreSQL sao infraestrutura e nao entram na contagem de modulos.
