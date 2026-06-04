@@ -155,15 +155,22 @@ Com os containers rodando, é necessário criar as tabelas no PostgreSQL. O arqu
 
 Para aplicar este esquema diretamente no container do banco de dados (`avionica_postgres`), execute o seguinte comando na raiz do projeto:
 
+No **PowerShell** (o padrão no Windows), o operador `<` não é suportado diretamente. O comando correto é ler o arquivo primeiro e enviá-lo para o Docker através de um "pipe" (`|`):
+
 ```powershell
-# Aplica o arquivo schema.sql no banco 'avionica' do container 'avionica_postgres'
+Get-Content infra\db\schema.sql | docker exec -i avionica_postgres psql -U avionica -d avionica
+```
+
+*(Se você estiver usando **Linux, macOS ou o Prompt de Comando/CMD** tradicional do Windows, você pode usar o redirecionamento clássico:*
+```bash
 docker exec -i avionica_postgres psql -U avionica -d avionica < infra/db/schema.sql
 ```
+*)*
 
 **Explicação do comando:**
 - `docker exec -i avionica_postgres`: Executa um comando interativo no container do banco de dados.
 - `psql -U avionica -d avionica`: Chama o utilitário PostgreSQL logando com o usuário `avionica` no banco de dados `avionica`.
-- `< infra/db/schema.sql`: Redireciona o conteúdo do seu arquivo SQL local para ser executado no banco.
+- `Get-Content` (ou `<`): Lê o arquivo SQL local e injeta o seu conteúdo para ser executado dentro do banco.
 
 ---
 
