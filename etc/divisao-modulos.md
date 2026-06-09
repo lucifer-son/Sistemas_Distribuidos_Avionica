@@ -131,8 +131,4 @@ Se alguns consumidores Kafka forem implementados dentro do backend Spring Boot u
 
 Para a defesa ficar mais forte, a melhor opcao e subir os modulos contabilizados como containers/processos separados no Docker Compose.
 
-## Resumo para Falar ao Professor
 
-O sistema e orientado a mensagens porque os sensores e APIs nao chamam diretamente o backend. Eles publicam eventos no Kafka. O backend Spring Boot, que e unico, consome esses eventos, processa os dados e salva no PostgreSQL. O frontend Vue acessa somente o backend por REST.
-
-Banco, Kafka, Docker e camadas internas nao entram na contagem de modulos.
