@@ -72,15 +72,15 @@ def classificar_risco(dados):
     categoria = dados.get("fltCat")
 
     if categoria in ["LIFR", "IFR"]:
-        return "ALTO"
+        return "Alto"
 
     if categoria == "MVFR":
-        return "MÉDIO"
+        return "Médio"
 
     if categoria == "VFR":
-        return "BAIXO"
+        return "Baixo"
 
-    return "DESCONHECIDO"
+    return "Desconhecido"
 
 if __name__ == "__main__":
     clima = buscar_clima_voo("SBRF", "EGLL")
