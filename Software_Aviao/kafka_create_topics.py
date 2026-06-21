@@ -2,7 +2,7 @@ import os
 import time
 
 from kafka.admin import KafkaAdminClient, NewTopic
-from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
+from kafka.errors import TopicAlreadyExistsError
 
 from kafka_topics import KAFKA_TOPICS
 
@@ -34,6 +34,6 @@ if __name__ == "__main__":
         try:
             create_topics()
             break
-        except NoBrokersAvailable:
+        except Exception as erro:
             print("[kafka-create-topics] Kafka ainda nao esta pronto. Tentando em 5s")
             time.sleep(5)

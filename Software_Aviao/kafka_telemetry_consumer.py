@@ -2,7 +2,6 @@ import json
 import os
 import time
 from kafka import KafkaConsumer
-from kafka.errors import NoBrokersAvailable
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
@@ -32,7 +31,7 @@ def main():
                 group_id="kafka-telemetry-debug"
             )
             break
-        except NoBrokersAvailable:
+        except Exception as erro:
             print("[kafka-telemetry-consumer] Kafka ainda nao esta pronto. Tentando em 5s")
             time.sleep(5)
 

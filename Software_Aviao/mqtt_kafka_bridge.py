@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from kafka import KafkaProducer
-from kafka.errors import NoBrokersAvailable
 
 from kafka_topics import MQTT_TO_KAFKA
 
@@ -27,7 +26,7 @@ def create_producer():
             )
             print(f"[mqtt-kafka-bridge] conectado ao Kafka em {KAFKA_BOOTSTRAP}")
             return producer
-        except NoBrokersAvailable:
+        except Exception as erro:
             print("[mqtt-kafka-bridge] Kafka ainda nao esta pronto. Tentando em 5s")
             time.sleep(5)
 

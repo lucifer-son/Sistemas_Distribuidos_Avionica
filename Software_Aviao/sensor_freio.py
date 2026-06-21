@@ -13,7 +13,6 @@ import uuid
 from datetime import datetime, timezone
 
 from kafka import KafkaConsumer, KafkaProducer
-from kafka.errors import NoBrokersAvailable
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 NODE_ID = int(os.getenv("BRAKE_NODE_ID", "1"))
@@ -60,7 +59,7 @@ def criar_producer():
             )
             print(f"[freios] conectado ao Kafka em {KAFKA_BOOTSTRAP}")
             return kafka_producer
-        except NoBrokersAvailable:
+        except Exception as erro:
             print("[freios] Kafka ainda nao esta pronto. Tentando em 5s")
             time.sleep(5)
 
@@ -78,7 +77,7 @@ def criar_consumer():
                 enable_auto_commit=True,
                 group_id=f"brake-sensor-{NODE_ID}-{uuid.uuid4()}",
             )
-        except NoBrokersAvailable:
+        except Exception as erro:
             print("[freios] Kafka ainda nao esta pronto para consumer. Tentando em 5s")
             time.sleep(5)
 
