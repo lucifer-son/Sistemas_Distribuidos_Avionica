@@ -89,15 +89,14 @@ public class LamportConsumerService {
 
     private void gravar(TelemetriaOrdenada t) {
         jdbc.update(
-            "INSERT INTO telemetria_ordenada " +
-            "(topico_kafka, sensor_origem, logical_clock, payload_json, callsign, recebido_em) " +
-            "VALUES (?, ?, ?, CAST(? AS jsonb), ?, ?)",
-            t.topicoKafka(),
-            t.sensorOrigem(),
-            t.logicalClock(),
-            t.payloadJson(),
-            t.callsign(),
-            t.recebidoEm()
+                "INSERT INTO telemetria_ordenada " +
+                        "(topico_kafka, sensor_origem, logical_clock, payload_json, callsign) " +
+                        "VALUES (?, ?, ?, CAST(? AS jsonb), ?)",
+                t.topicoKafka(),
+                t.sensorOrigem(),
+                t.logicalClock(),
+                t.payloadJson(),
+                t.callsign()
         );
     }
 
