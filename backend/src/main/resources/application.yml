@@ -22,6 +22,8 @@ app:
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
     topic-filter: ${MQTT_TOPIC_FILTER:avionica/#}
+  lamport:
+    group-id: ${LAMPORT_GROUP_ID:lamport-consumer}
 
 management:
   endpoints:
