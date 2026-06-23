@@ -1,13 +1,19 @@
 package avionica.lamport.service;
 
+import avionica.lamport.dto.TelemetriaOrdenadaDto;
 import avionica.lamport.model.TelemetriaOrdenada;
+import avionica.lamport.repository.TelemetriaOrdenadaRepository;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -15,10 +21,10 @@ public class LamportConsumerService {
     private static final Logger logger = LoggerFactory.getLogger(LamportConsumerService.class);
 
     private final AtomicLong localClock = new AtomicLong(0);
-    private final JdbcTemplate jdbc;
+    private final TelemetriaOrdenadaRepository repository;
 
-    public LamportConsumerService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public LamportConsumerService(TelemetriaOrdenadaRepository repository) {
+        this.repository = repository;
     }
 
     /**
@@ -64,14 +70,14 @@ public class LamportConsumerService {
                 "aircraft_id"
             );
 
-            TelemetriaOrdenada entrada = new TelemetriaOrdenada(
-                topico,
-                sensorOrigem,
-                clockConsolidado,
-                payloadJson,
-                callsign,
-                Instant.now()
-            );
+            TelemetriaOrdenada entrada = TelemetriaOrdenada.builder()
+                .topicoKafka(topico)
+                .sensorOrigem(sensorOrigem)
+                .logicalClock(clockConsolidado)
+                .payloadJson(payloadJson)
+                .callsign(callsign)
+                .recebidoEm(OffsetDateTime.now(ZoneOffset.UTC))
+                .build();
 
             gravar(entrada);
 
@@ -88,16 +94,37 @@ public class LamportConsumerService {
     }
 
     private void gravar(TelemetriaOrdenada t) {
-        jdbc.update(
-                "INSERT INTO telemetria_ordenada " +
-                        "(topico_kafka, sensor_origem, logical_clock, payload_json, callsign) " +
-                        "VALUES (?, ?, ?, CAST(? AS jsonb), ?)",
-                t.topicoKafka(),
-                t.sensorOrigem(),
-                t.logicalClock(),
-                t.payloadJson(),
-                t.callsign()
+        repository.save(t);
+    }
+
+    public List<TelemetriaOrdenadaDto> listarTelemetriaOrdenada(int limite) {
+        int limiteSeguro = Math.max(1, Math.min(limite, 200));
+
+        PageRequest pagina = PageRequest.of(
+            0,
+            limiteSeguro,
+            Sort.by(
+                Sort.Order.desc("logicalClock"),
+                Sort.Order.desc("recebidoEm")
+            )
         );
+
+        return repository.findAll(pagina)
+            .stream()
+            .map(this::toDto)
+            .toList();
+    }
+
+    private TelemetriaOrdenadaDto toDto(TelemetriaOrdenada t) {
+        return TelemetriaOrdenadaDto.builder()
+            .id(t.getId())
+            .recebidoEm(t.getRecebidoEm())
+            .topicoKafka(t.getTopicoKafka())
+            .sensorOrigem(t.getSensorOrigem())
+            .logicalClock(t.getLogicalClock())
+            .payloadJson(t.getPayloadJson())
+            .callsign(t.getCallsign())
+            .build();
     }
 
     public long getLocalClock() {
