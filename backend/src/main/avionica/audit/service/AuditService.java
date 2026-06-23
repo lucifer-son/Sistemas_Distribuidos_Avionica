@@ -4,6 +4,7 @@ import avionica.audit.dto.CausalityReportDto;
 import avionica.audit.dto.SensorAuditDto;
 import avionica.audit.dto.TableDataDto;
 import avionica.audit.dto.TableInfoDto;
+import avionica.audit.model.SensorAudit;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.jdbc.support.rowset.SqlRowSetMetaData;
@@ -51,7 +52,6 @@ public class AuditService {
      */
     public List<TableInfoDto> listTables() {
         List<TableInfoDto> list = new ArrayList<>();
-        // Ordena chaves para manter consistência no retorno
         List<String> sortedKeys = new ArrayList<>(TABLE_METADATA.keySet());
         Collections.sort(sortedKeys);
 
@@ -59,10 +59,17 @@ public class AuditService {
             TableMetadata meta = TABLE_METADATA.get(tableName);
             try {
                 Long count = jdbc.queryForObject("SELECT COUNT(*) FROM " + tableName, Long.class);
-                list.add(new TableInfoDto(tableName, meta.displayName, count != null ? count : 0L));
+                list.add(TableInfoDto.builder()
+                    .id(tableName)
+                    .displayName(meta.displayName)
+                    .rowCount(count != null ? count : 0L)
+                    .build());
             } catch (Exception e) {
-                // Se a tabela não existir ainda no banco, retorna 0
-                list.add(new TableInfoDto(tableName, meta.displayName, 0L));
+                list.add(TableInfoDto.builder()
+                    .id(tableName)
+                    .displayName(meta.displayName)
+                    .rowCount(0L)
+                    .build());
             }
         }
         return list;
@@ -125,10 +132,7 @@ public class AuditService {
             queryBuilder.append(" WHERE ").append(String.join(" AND ", conditions));
         }
 
-        // Ordena decrescente pelo campo de tempo (mais recentes primeiro)
         queryBuilder.append(" ORDER BY ").append(timeCol).append(" DESC");
-
-        // Limite de registros
         queryBuilder.append(" LIMIT ?");
         queryParams.add(parsedLimit);
 
@@ -150,7 +154,12 @@ public class AuditService {
                 rows.add(row);
             }
 
-            return new TableDataDto(true, tableName, columns, rows);
+            return TableDataDto.builder()
+                .success(true)
+                .tableName(tableName)
+                .columns(columns)
+                .rows(rows)
+                .build();
         } catch (Exception e) {
             throw new RuntimeException("Erro ao consultar dados da tabela " + tableName + ": " + e.getMessage());
         }
@@ -172,18 +181,15 @@ public class AuditService {
 
     /**
      * Executa a auditoria de causalidade e integridade usando o Algoritmo de Lamport.
-     * Analisa perdas de pacotes (gaps) e anomalias causais (mensagens que chegaram fora de ordem física).
      */
     public CausalityReportDto auditCausality() {
         try {
-            // Aprimoramento Crítico: ordena por tempo físico de recebimento (recebido_em ASC)
-            // para analisar se a ordem lógica de Lamport bate com o tempo físico em que a mensagem chegou
             String query = "SELECT sensor_origem, logical_clock, recebido_em " +
                            "FROM telemetria_ordenada " +
                            "ORDER BY sensor_origem, recebido_em ASC";
             SqlRowSet rowSet = jdbc.queryForRowSet(query);
 
-            Map<String, SensorAuditDto> auditMap = new LinkedHashMap<>();
+            Map<String, SensorAudit> auditMap = new LinkedHashMap<>();
             long totalAnomalias = 0;
             long totalPerdas = 0;
 
@@ -191,7 +197,6 @@ public class AuditService {
                 String sensorOrigem = rowSet.getString("sensor_origem");
                 long clock = rowSet.getLong("logical_clock");
 
-                // Mapeamento correto de data/hora
                 OffsetDateTime recebidoEm;
                 Object recebidoObj = rowSet.getObject("recebido_em");
                 if (recebidoObj instanceof OffsetDateTime odt) {
@@ -207,18 +212,16 @@ public class AuditService {
                 long timeMs = recebidoEm.toInstant().toEpochMilli();
 
                 if (!auditMap.containsKey(sensorOrigem)) {
-                    auditMap.put(sensorOrigem, new SensorAuditDto(sensorOrigem, clock, timeMs));
+                    auditMap.put(sensorOrigem, new SensorAudit(sensorOrigem, clock, timeMs));
                 } else {
-                    SensorAuditDto sensorData = auditMap.get(sensorOrigem);
+                    SensorAudit sensorData = auditMap.get(sensorOrigem);
                     sensorData.incrementMensagens();
 
-                    // 1. Detecção de Anomalia Causal: Clock lógico menor ou igual ao anterior mas tempo físico posterior
                     if (clock <= sensorData.getUltimoClock()) {
                         sensorData.incrementAnomalias();
                         totalAnomalias++;
                     }
 
-                    // 2. Análise de Gaps (mensagens perdidas): O relógio lógico saltou mais de 1
                     long gap = clock - sensorData.getUltimoClock();
                     if (gap > 1) {
                         long perdidos = gap - 1;
@@ -231,7 +234,18 @@ public class AuditService {
                 }
             }
 
-            List<SensorAuditDto> sensores = new ArrayList<>(auditMap.values());
+            // Mapeia o modelo mutável para DTOs imutáveis (records com Builder)
+            List<SensorAuditDto> sensores = new ArrayList<>();
+            for (SensorAudit model : auditMap.values()) {
+                sensores.add(SensorAuditDto.builder()
+                    .sensor(model.getSensor())
+                    .totalMensagens(model.getTotalMensagens())
+                    .ultimoClock(model.getUltimoClock())
+                    .ultimoTime(model.getUltimoTime())
+                    .anomaliasCausais(model.getAnomaliasCausais())
+                    .mensagensPerdidas(model.getMensagensPerdidas())
+                    .build());
+            }
 
             Map<String, Object> metricasGlobais = Map.of(
                 "totalSensoresAuditados", sensores.size(),
@@ -240,7 +254,12 @@ public class AuditService {
                 "statusIntegridade", (totalAnomalias == 0 && totalPerdas == 0) ? "CONCORDANTE" : "DEGRADADO"
             );
 
-            return new CausalityReportDto(true, OffsetDateTime.now(), metricasGlobais, sensores);
+            return CausalityReportDto.builder()
+                .success(true)
+                .timestamp(OffsetDateTime.now())
+                .metricasGlobais(metricasGlobais)
+                .sensores(sensores)
+                .build();
         } catch (Exception e) {
             throw new RuntimeException("Erro ao processar auditoria causal: " + e.getMessage());
         }

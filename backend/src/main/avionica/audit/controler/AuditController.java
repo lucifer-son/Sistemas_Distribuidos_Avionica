@@ -1,4 +1,4 @@
-package avionica.api.controler;
+package avionica.audit.controler;
 
 import avionica.audit.dto.CausalityReportDto;
 import avionica.audit.dto.TableDataDto;

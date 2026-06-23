@@ -1,11 +1,9 @@
 package avionica.lamport.model;
 
+import lombok.Builder;
 import java.time.Instant;
 
-/**
- * Representa uma mensagem de telemetria processada pelo relógio lógico de Lamport,
- * pronta para persistência em ordem causal no PostgreSQL.
- */
+@Builder
 public record TelemetriaOrdenada(
     String topicoKafka,
     String sensorOrigem,
