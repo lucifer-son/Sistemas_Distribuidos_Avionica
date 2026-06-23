@@ -13,3 +13,10 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = 'avionica-backend'
+
+if (file('kafka-stream-gateway').isDirectory()) {
+    include 'kafka-stream-gateway'
+}
+if (file('aerocontrol-dispatcher').isDirectory()) {
+    include 'aerocontrol-dispatcher'
+}
