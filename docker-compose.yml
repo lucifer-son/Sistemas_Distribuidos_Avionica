@@ -227,6 +227,63 @@ services:
     depends_on:
       - mqtt-broker
 
+  motor-a:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_motor_a
+    command: python motor.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MOTOR_ID: a
+      KAFKA_BROKER: kafka:9092
+    depends_on:
+      - kafka
+      - kafka-topic-init
+
+  motor-b:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_motor_b
+    command: python motor.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MOTOR_ID: b
+      KAFKA_BROKER: kafka:9092
+    depends_on:
+      - kafka
+      - kafka-topic-init
+
+  motor-c:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_motor_c
+    command: python motor.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MOTOR_ID: c
+      KAFKA_BROKER: kafka:9092
+    depends_on:
+      - kafka
+      - kafka-topic-init
+
+  injetor-kafka:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_injetor_kafka
+    command: python injetor_kafka.py
+    tty: true
+    stdin_open: true
+    environment:
+      PYTHONUNBUFFERED: "1"
+      KAFKA_BROKER: kafka:9092
+    depends_on:
+      - kafka
+      - kafka-topic-init
+
   db-visualizer:
     build:
       context: ./db-visualizer
