@@ -61,3 +61,8 @@ results/
 *.sca
 *.vci
 *.elog
+
+# Cache SQLite local do FMS
+Software_Aviao/data/*.db
+Software_Aviao/data/*.db-shm
+Software_Aviao/data/*.db-wal

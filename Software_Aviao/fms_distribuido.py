@@ -4,13 +4,14 @@ import math
 import os
 import threading
 import time
-from pathlib import Path
+from typing import Any
 
 import paho.mqtt.client as mqtt
 import requests
 
+from cache_aeroportos import CacheAeroportosSQLite
 
-# Configurações MQTT
+
 BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 PORTA = int(os.getenv("MQTT_PORT", "1883"))
 
@@ -18,76 +19,25 @@ TOPICO_ROTA_CMD = "avionica/comandos/rota"
 TOPICO_VOO = "avionica/sensores/voo"
 TOPICO_FMS_DADOS = "avionica/fms/dados"
 
-
-# Configuração da API externa
-API_KEY = (
-        os.getenv("FMS_API_KEY")
-        or os.getenv("API_NINJAS_KEY")
-)
-
-
-# Arquivo local usado em caso de falha da API
-CAMINHO_AEROPORTOS_FALLBACK = (
-        Path(__file__).resolve().parent
-        / "aeroportos_fallback.json"
-)
-
-
-def carregar_aeroportos_fallback() -> dict:
-    try:
-        with CAMINHO_AEROPORTOS_FALLBACK.open(
-                "r",
-                encoding="utf-8"
-        ) as arquivo:
-            dados = json.load(arquivo)
-
-        print(
-            f"[FMS] Base local carregada: "
-            f"{len(dados)} aeroportos."
-        )
-
-        return dados
-
-    except FileNotFoundError:
-        print(
-            "[FMS] Arquivo aeroportos_fallback.json "
-            "não foi encontrado."
-        )
-        return {}
-
-    except json.JSONDecodeError as erro:
-        print(
-            f"[FMS] JSON de aeroportos inválido: {erro}"
-        )
-        return {}
-
-    except OSError as erro:
-        print(
-            f"[FMS] Não foi possível ler a base local: "
-            f"{erro}"
-        )
-        return {}
+API_KEY = os.getenv("FMS_API_KEY") or os.getenv("API_NINJAS_KEY")
+URL_API_AEROPORTOS = "https://api.api-ninjas.com/v1/airports"
 
 
 class FlightManagementSystem:
     def __init__(self):
         self.velocidade_mach = 0.80
+        self.cache_aeroportos = CacheAeroportosSQLite()
 
-        self.aeroportos_fallback = (
-            carregar_aeroportos_fallback()
-        )
-
-        self.rota_atual = {
+        self.rota_atual: dict[str, Any] = {
             "origem": "N/A",
             "destino": "N/A",
             "distancia_nm": 0.0,
             "eta_minutos": 0,
             "status": "AGUARDANDO",
             "fonte_origem": None,
-            "fonte_destino": None
+            "fonte_destino": None,
         }
 
-        # Evita o aviso de API antiga nas versões recentes do paho-mqtt.
         if hasattr(mqtt, "CallbackAPIVersion"):
             self.cliente = mqtt.Client(
                 mqtt.CallbackAPIVersion.VERSION2
@@ -96,270 +46,202 @@ class FlightManagementSystem:
             self.cliente = mqtt.Client()
 
         self.cliente.on_connect = self.ao_conectar
-        self.cliente.on_message = (
-            self.ao_receber_mensagem
+        self.cliente.on_message = self.ao_receber_mensagem
+
+        print(
+            "[FMS] Cache SQLite iniciado com "
+            f"{self.cache_aeroportos.quantidade()} aeroportos."
         )
 
+    @staticmethod
+    def validar_icao(icao: str) -> bool:
+        return len(icao) == 4 and icao.isalpha()
+
+    @staticmethod
     def calcular_distancia(
-            self,
             lat1: float,
             lon1: float,
             lat2: float,
-            lon2: float
+            lon2: float,
     ) -> float:
-        """
-        Calcula a distância entre dois aeroportos usando
-        a fórmula de Haversine.
-
-        O resultado é retornado em milhas náuticas.
-        """
+        """Calcula a distância em milhas náuticas pela fórmula de Haversine."""
         raio_terra_nm = 3440.065
-
-        diferenca_latitude = math.radians(
-            lat2 - lat1
-        )
-
-        diferenca_longitude = math.radians(
-            lon2 - lon1
-        )
+        diferenca_latitude = math.radians(lat2 - lat1)
+        diferenca_longitude = math.radians(lon2 - lon1)
 
         calculo = (
                 math.sin(diferenca_latitude / 2) ** 2
                 + math.cos(math.radians(lat1))
                 * math.cos(math.radians(lat2))
-                * math.sin(
-            diferenca_longitude / 2
-        ) ** 2
+                * math.sin(diferenca_longitude / 2) ** 2
         )
 
         angulo = 2 * math.atan2(
             math.sqrt(calculo),
-            math.sqrt(1 - calculo)
+            math.sqrt(1 - calculo),
         )
 
         return raio_terra_nm * angulo
 
-    def buscar_coordenadas_api(
+    def buscar_aeroporto_api(
             self,
-            icao: str
-    ) -> tuple[float, float] | None:
+            icao: str,
+    ) -> dict[str, Any] | None:
         if not API_KEY:
             print(
-                f"[FMS] Chave da API não configurada. "
-                f"Usando fallback para {icao}."
+                f"[FMS] API não configurada para {icao}. "
+                "Consultando cache SQLite."
             )
             return None
 
-        url = (
-            "https://api.api-ninjas.com/v1/airports"
-            f"?icao={icao}"
-        )
-
         try:
             resposta = requests.get(
-                url,
-                headers={
-                    "X-Api-Key": API_KEY
-                },
-                timeout=(3, 5)
+                URL_API_AEROPORTOS,
+                params={"icao": icao},
+                headers={"X-Api-Key": API_KEY},
+                timeout=(3, 5),
             )
-
             resposta.raise_for_status()
             dados = resposta.json()
 
             if not dados:
+                print(
+                    f"[FMS] A API não encontrou o aeroporto {icao}. "
+                    "Consultando cache SQLite."
+                )
                 return None
 
-            aeroporto = dados[0]
+            aeroporto_api = dados[0]
+            latitude = float(aeroporto_api["latitude"])
+            longitude = float(aeroporto_api["longitude"])
 
-            return (
-                float(aeroporto["latitude"]),
-                float(aeroporto["longitude"])
+            aeroporto = {
+                "icao": icao,
+                "nome": aeroporto_api.get("name"),
+                "cidade": aeroporto_api.get("city"),
+                "latitude": latitude,
+                "longitude": longitude,
+                "fonte": "API_EXTERNA",
+            }
+
+            self.cache_aeroportos.salvar_ou_atualizar(
+                icao=icao,
+                nome=aeroporto["nome"],
+                cidade=aeroporto["cidade"],
+                latitude=latitude,
+                longitude=longitude,
+                fonte="API_EXTERNA",
             )
+
+            print(
+                f"[FMS] Coordenadas de {icao} obtidas pela API "
+                "e atualizadas no cache."
+            )
+            return aeroporto
 
         except (
                 requests.RequestException,
                 ValueError,
                 KeyError,
-                TypeError
+                TypeError,
         ) as erro:
             print(
-                f"[FMS] Falha na API para {icao}: "
-                f"{erro}"
+                f"[FMS] Falha na API para {icao}: {erro}. "
+                "Consultando cache SQLite."
             )
             return None
 
-    def buscar_coordenadas_fallback(
+    def buscar_aeroporto_cache(
             self,
-            icao: str
-    ) -> tuple[float, float] | None:
-        aeroporto = self.aeroportos_fallback.get(
-            icao
-        )
+            icao: str,
+    ) -> dict[str, Any] | None:
+        aeroporto = self.cache_aeroportos.buscar(icao)
 
-        if not aeroporto:
-            return None
-
-        try:
-            return (
-                float(aeroporto["latitude"]),
-                float(aeroporto["longitude"])
+        if aeroporto:
+            print(
+                f"[FMS] Aeroporto {icao} recuperado do cache SQLite. "
+                f"Última atualização: {aeroporto['atualizado_em']}."
             )
+            aeroporto["fonte"] = "CACHE_SQLITE"
+            return aeroporto
 
-        except (
-                KeyError,
-                TypeError,
-                ValueError
-        ):
-            return None
+        print(
+            f"[FMS] Aeroporto {icao} não existe no cache SQLite."
+        )
+        return None
 
-    def buscar_coordenadas(
+    def buscar_aeroporto(
             self,
-            icao: str
-    ) -> tuple[
-        float | None,
-        float | None,
-        str
-    ]:
-        icao = icao.strip().upper()
+            icao: str,
+    ) -> dict[str, Any] | None:
+        codigo = icao.strip().upper()
 
-        coordenadas_api = (
-            self.buscar_coordenadas_api(icao)
-        )
+        aeroporto_api = self.buscar_aeroporto_api(codigo)
+        if aeroporto_api:
+            return aeroporto_api
 
-        if coordenadas_api:
-            latitude, longitude = coordenadas_api
-
-            return (
-                latitude,
-                longitude,
-                "API_EXTERNA"
-            )
-
-        coordenadas_fallback = (
-            self.buscar_coordenadas_fallback(icao)
-        )
-
-        if coordenadas_fallback:
-            latitude, longitude = (
-                coordenadas_fallback
-            )
-
-            return (
-                latitude,
-                longitude,
-                "FALLBACK_LOCAL"
-            )
-
-        return (
-            None,
-            None,
-            "NAO_ENCONTRADO"
-        )
+        return self.buscar_aeroporto_cache(codigo)
 
     def processar_rota(
             self,
             origem: str,
-            destino: str
-    ) -> dict | None:
+            destino: str,
+    ) -> dict[str, Any] | None:
         origem = origem.strip().upper()
         destino = destino.strip().upper()
 
-        if (
-                len(origem) != 4
-                or not origem.isalpha()
-                or len(destino) != 4
-                or not destino.isalpha()
-        ):
+        if not self.validar_icao(origem) or not self.validar_icao(destino):
             print(
-                "[FMS] Origem e destino devem possuir "
-                "quatro letras ICAO."
+                "[FMS] Origem e destino devem possuir quatro letras ICAO."
             )
             return None
 
-        print(
-            f"[FMS] Calculando rota "
-            f"{origem} -> {destino}..."
-        )
+        print(f"[FMS] Calculando rota {origem} -> {destino}...")
 
-        lat1, lon1, fonte_origem = (
-            self.buscar_coordenadas(origem)
-        )
+        aeroporto_origem = self.buscar_aeroporto(origem)
+        aeroporto_destino = self.buscar_aeroporto(destino)
 
-        lat2, lon2, fonte_destino = (
-            self.buscar_coordenadas(destino)
-        )
-
-        if None in (
-                lat1,
-                lon1,
-                lat2,
-                lon2
-        ):
+        if aeroporto_origem is None or aeroporto_destino is None:
             print(
-                "[FMS] Não foi possível localizar "
-                "um dos aeroportos."
+                "[FMS] Não foi possível localizar um dos aeroportos "
+                "nem pela API nem pelo cache."
             )
             return None
 
         distancia = self.calcular_distancia(
-            lat1,
-            lon1,
-            lat2,
-            lon2
+            float(aeroporto_origem["latitude"]),
+            float(aeroporto_origem["longitude"]),
+            float(aeroporto_destino["latitude"]),
+            float(aeroporto_destino["longitude"]),
         )
 
-        velocidade_knots = (
-                self.velocidade_mach * 600.0
-        )
+        velocidade_knots = self.velocidade_mach * 600.0
+        eta_minutos = round((distancia / velocidade_knots) * 60)
 
-        eta_minutos = round(
-            (
-                    distancia
-                    / velocidade_knots
-            )
-            * 60
+        fontes = {
+            aeroporto_origem["fonte"],
+            aeroporto_destino["fonte"],
+        }
+        status = (
+            "ONLINE"
+            if fontes == {"API_EXTERNA"}
+            else "OFFLINE_FALLBACK"
         )
-
-        if (
-                fonte_origem == "API_EXTERNA"
-                and fonte_destino == "API_EXTERNA"
-        ):
-            status = "ONLINE"
-        else:
-            status = "OFFLINE_FALLBACK"
 
         self.rota_atual = {
             "origem": origem,
             "destino": destino,
-            "distancia_nm": round(
-                distancia,
-                1
-            ),
+            "distancia_nm": round(distancia, 1),
             "eta_minutos": eta_minutos,
             "status": status,
-            "fonte_origem": fonte_origem,
-            "fonte_destino": fonte_destino
+            "fonte_origem": aeroporto_origem["fonte"],
+            "fonte_destino": aeroporto_destino["fonte"],
         }
 
-        print(
-            f"[FMS] Rota calculada: "
-            f"{origem} -> {destino}"
-        )
-
-        print(
-            f"[FMS] Distância: "
-            f"{distancia:.1f} NM"
-        )
-
-        print(
-            f"[FMS] ETA: "
-            f"{eta_minutos} minutos"
-        )
-
-        print(
-            f"[FMS] Status: {status}"
-        )
+        print(f"[FMS] Rota calculada: {origem} -> {destino}")
+        print(f"[FMS] Distância: {distancia:.1f} NM")
+        print(f"[FMS] ETA: {eta_minutos} minutos")
+        print(f"[FMS] Status: {status}")
 
         return self.rota_atual.copy()
 
@@ -369,16 +251,13 @@ class FlightManagementSystem:
             dados_usuario,
             flags,
             codigo_retorno,
-            propriedades=None
-    ):
-        print(
-            "[FMS] Conectado à rede aviônica MQTT."
-        )
-
+            propriedades=None,
+    ) -> None:
+        print("[FMS] Conectado à rede aviônica MQTT.")
         cliente.subscribe(
             [
                 (TOPICO_ROTA_CMD, 0),
-                (TOPICO_VOO, 0)
+                (TOPICO_VOO, 0),
             ]
         )
 
@@ -386,200 +265,144 @@ class FlightManagementSystem:
             self,
             cliente,
             dados_usuario,
-            mensagem
-    ):
+            mensagem,
+    ) -> None:
         try:
             pacote = json.loads(
                 mensagem.payload.decode("utf-8")
             )
 
             if mensagem.topic == TOPICO_VOO:
-                dados_voo = pacote.get(
+                velocidade = pacote.get(
                     "dados",
-                    {}
-                )
-
-                velocidade = dados_voo.get(
-                    "velocidade_mach"
-                )
+                    {},
+                ).get("velocidade_mach")
 
                 if velocidade is not None:
-                    self.velocidade_mach = float(
-                        velocidade
-                    )
+                    self.velocidade_mach = float(velocidade)
 
             elif mensagem.topic == TOPICO_ROTA_CMD:
                 origem = str(
                     pacote.get("origem", "")
                 ).strip().upper()
-
                 destino = str(
                     pacote.get("destino", "")
                 ).strip().upper()
 
-                thread_rota = threading.Thread(
+                threading.Thread(
                     target=self.processar_rota,
                     args=(origem, destino),
-                    daemon=True
-                )
-
-                thread_rota.start()
+                    daemon=True,
+                ).start()
 
         except (
                 json.JSONDecodeError,
                 TypeError,
-                ValueError
+                ValueError,
         ) as erro:
-            print(
-                f"[FMS] Mensagem MQTT inválida: "
-                f"{erro}"
+            print(f"[FMS] Mensagem MQTT inválida: {erro}")
+
+    def criar_payload_rota(self) -> dict[str, Any]:
+        velocidade_knots = self.velocidade_mach * 600.0
+        eta_minutos = self.rota_atual["eta_minutos"]
+
+        if (
+                self.rota_atual["distancia_nm"] > 0
+                and velocidade_knots > 0
+        ):
+            eta_minutos = round(
+                (
+                        self.rota_atual["distancia_nm"]
+                        / velocidade_knots
+                )
+                * 60
             )
 
-    def iniciar(self):
+        return {
+            "dados": {
+                "rota_texto": (
+                    f"{self.rota_atual['origem']} -> "
+                    f"{self.rota_atual['destino']}"
+                ),
+                "origem": self.rota_atual["origem"],
+                "destino": self.rota_atual["destino"],
+                "distancia_nm": round(
+                    self.rota_atual["distancia_nm"],
+                    1,
+                ),
+                "eta_minutos": eta_minutos,
+                "status": self.rota_atual["status"],
+                "fonte_origem": self.rota_atual["fonte_origem"],
+                "fonte_destino": self.rota_atual["fonte_destino"],
+            }
+        }
+
+    def iniciar(self) -> None:
         print(
-            f"[FMS] Conectando ao broker "
-            f"{BROKER}:{PORTA}..."
+            f"[FMS] Conectando ao broker {BROKER}:{PORTA}..."
         )
-
-        self.cliente.connect(
-            BROKER,
-            PORTA,
-            60
-        )
-
+        self.cliente.connect(BROKER, PORTA, 60)
         self.cliente.loop_start()
 
         try:
             while True:
-                velocidade_knots = (
-                        self.velocidade_mach * 600.0
-                )
-
-                eta_minutos = (
-                    self.rota_atual[
-                        "eta_minutos"
-                    ]
-                )
-
-                if (
-                        self.rota_atual[
-                            "distancia_nm"
-                        ] > 0
-                        and velocidade_knots > 0
-                ):
-                    eta_minutos = round(
-                        (
-                                self.rota_atual[
-                                    "distancia_nm"
-                                ]
-                                / velocidade_knots
-                        )
-                        * 60
-                    )
-
-                pacote = {
-                    "dados": {
-                        "rota_texto": (
-                            f"{self.rota_atual['origem']} "
-                            f"-> "
-                            f"{self.rota_atual['destino']}"
-                        ),
-                        "origem": (
-                            self.rota_atual["origem"]
-                        ),
-                        "destino": (
-                            self.rota_atual["destino"]
-                        ),
-                        "distancia_nm": round(
-                            self.rota_atual[
-                                "distancia_nm"
-                            ],
-                            1
-                        ),
-                        "eta_minutos": eta_minutos,
-                        "status": (
-                            self.rota_atual["status"]
-                        ),
-                        "fonte_origem": (
-                            self.rota_atual[
-                                "fonte_origem"
-                            ]
-                        ),
-                        "fonte_destino": (
-                            self.rota_atual[
-                                "fonte_destino"
-                            ]
-                        )
-                    }
-                }
-
                 self.cliente.publish(
                     TOPICO_FMS_DADOS,
                     json.dumps(
-                        pacote,
-                        ensure_ascii=False
-                    )
+                        self.criar_payload_rota(),
+                        ensure_ascii=False,
+                    ),
                 )
-
                 time.sleep(2)
 
         except KeyboardInterrupt:
-            print(
-                "\n[FMS] Encerrando módulo."
-            )
+            print("\n[FMS] Encerrando módulo.")
 
         finally:
             self.cliente.loop_stop()
             self.cliente.disconnect()
 
 
+def executar_teste_local(
+        fms: FlightManagementSystem,
+        origem: str,
+        destino: str,
+) -> None:
+    resultado = fms.processar_rota(origem, destino)
+
+    if resultado:
+        print("\n========== RESULTADO FMS ==========")
+        print(
+            json.dumps(
+                resultado,
+                indent=4,
+                ensure_ascii=False,
+            )
+        )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=(
-            "FMS de Planejamento de Rotas"
-        )
+        description="FMS de Planejamento de Rotas"
     )
-
     parser.add_argument(
         "--teste-local",
         nargs=2,
-        metavar=(
-            "ORIGEM",
-            "DESTINO"
-        ),
+        metavar=("ORIGEM", "DESTINO"),
         help=(
             "Calcula uma rota sem iniciar MQTT. "
-            "Exemplo: "
-            "--teste-local SBRF SBGR"
-        )
+            "Exemplo: --teste-local SBRF SBGR"
+        ),
     )
-
     argumentos = parser.parse_args()
 
-    fms = FlightManagementSystem()
+    sistema_fms = FlightManagementSystem()
 
     if argumentos.teste_local:
-        origem, destino = (
-            argumentos.teste_local
+        executar_teste_local(
+            sistema_fms,
+            argumentos.teste_local[0],
+            argumentos.teste_local[1],
         )
-
-        resultado = fms.processar_rota(
-            origem,
-            destino
-        )
-
-        if resultado:
-            print(
-                "\n========== RESULTADO FMS =========="
-            )
-
-            print(
-                json.dumps(
-                    resultado,
-                    indent=4,
-                    ensure_ascii=False
-                )
-            )
-
     else:
-        fms.iniciar()
+        sistema_fms.iniciar()

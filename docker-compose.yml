@@ -133,8 +133,11 @@ services:
       MQTT_BROKER: ${MQTT_BROKER:-mqtt-broker}
       MQTT_PORT: ${MQTT_PORT:-1883}
       FMS_API_KEY: ${FMS_API_KEY:-}
+      FMS_CACHE_DB: /app/data/fms_cache.db
     depends_on:
       - mqtt-broker
+    volumes:
+      - fms_cache:/app/data
 
   sensor-flight:
     build:
@@ -336,3 +339,4 @@ services:
 volumes:
   postgres_data:
   frontend_node_modules:
+  fms_cache:
