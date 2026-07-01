@@ -251,7 +251,7 @@
 
     <!-- TAB 4: VISUALIZADOR DE BD -->
     <section v-if="activeTab === 'banco'" class="container-fluid px-4">
-      <DbVisualizer :api-base-url="apiBaseUrl" />
+      <DbVisualizer :api-base-url="auditEngineUrl" />
     </section>
   </main>
 </template>
@@ -263,6 +263,9 @@ import DataCard from './components/DataCard.vue';
 import DbVisualizer from './components/DbVisualizer.vue';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const dispatcherUrl = 'http://localhost:8082';
+const kafkaGatewayUrl = 'http://localhost:9000';
+const auditEngineUrl = 'http://localhost:8081';
 
 // Estados Gerais
 const activeTab = ref('sgca');
@@ -272,6 +275,7 @@ const aircraftList = ref([]);
 const routeList = ref([]);
 const error = ref('');
 let refreshTimer;
+let kafkaEventSource = null;
 
 // Inputs Simulação
 const simCallsign = ref('');
@@ -388,6 +392,34 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString('pt-BR');
 }
 
+// Conexão SSE com o Gateway do Kafka (:9000)
+function connectToKafkaStream() {
+  if (kafkaEventSource) kafkaEventSource.close();
+
+  kafkaEventSource = new EventSource(`${kafkaGatewayUrl}/api/stream`);
+
+  kafkaEventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      kafkaEvents.value.unshift({
+        ts: new Date(parseInt(data.timestamp || Date.now(), 10)).toLocaleTimeString('pt-BR'),
+        topic: data.topic,
+        payload: JSON.stringify(data.value)
+      });
+
+      if (kafkaEvents.value.length > 50) {
+        kafkaEvents.value.pop();
+      }
+    } catch (e) {
+      console.error('Erro ao processar stream do Kafka:', e);
+    }
+  };
+
+  kafkaEventSource.onerror = (err) => {
+    console.error('Erro na conexão com o Kafka Stream Gateway, tentando reconectar...');
+  };
+}
+
 // APIs Aeronaves
 async function loadAircraft() {
   try {
@@ -401,7 +433,7 @@ async function loadAircraft() {
 async function createAircraft() {
   error.value = '';
   try {
-    await axios.post(`${apiBaseUrl}/api/aircraft`, {
+    await axios.post(`${dispatcherUrl}/api/dispatcher/aircraft`, {
       callsign: newCallsign.value,
       modelo: newModelo.value,
       capacidade_combustivel: newFuel.value,
@@ -411,17 +443,17 @@ async function createAircraft() {
     newModelo.value = '';
     await loadAircraft();
   } catch (err) {
-    error.value = err.response?.data?.erro || 'Erro ao registrar aeronave.';
+    error.value = err.response?.data?.erro || err.response?.data?.error || 'Erro ao registrar aeronave no AeroControl.';
   }
 }
 
 async function deleteAircraft(callsign) {
   error.value = '';
   try {
-    await axios.delete(`${apiBaseUrl}/api/aircraft/${callsign}`);
+    await axios.delete(`${dispatcherUrl}/api/dispatcher/aircraft/${callsign}`);
     await loadAircraft();
   } catch (err) {
-    error.value = err.response?.data?.erro || 'Erro ao excluir aeronave.';
+    error.value = err.response?.data?.erro || err.response?.data?.error || 'Erro ao excluir aeronave.';
   }
 }
 
@@ -438,23 +470,23 @@ async function loadRoutes() {
 async function startSimulation() {
   error.value = '';
   try {
+    // 💡 Chama o endpoint de decolagem complexa que valida clima e computadores de voo
+    const response = await axios.post(`${dispatcherUrl}/api/dispatcher/aircraft/${simCallsign.value}/takeoff`);
+    
+    // Inicia a movimentação chamando a rota no FMS central
     await axios.post(`${apiBaseUrl}/api/routes`, {
       callsign: simCallsign.value,
       origin: simOrigin.value,
       destination: simDestination.value
     });
-    
-    // Simular evento visual no Kafka log
-    kafkaEvents.value.push({
-      ts: new Date().toLocaleTimeString(),
-      topic: 'avionica.route.requested',
-      payload: `{"callsign":"${simCallsign.value}","origem":"${simOrigin.value}","destino":"${simDestination.value}"}`
-    });
 
     await loadAircraft();
     await loadRoutes();
+    if (response.data && response.data.message) {
+      alert(response.data.message); // Exibe o status do consenso distribuído
+    }
   } catch (err) {
-    error.value = err.response?.data?.erro || 'Erro ao iniciar simulacao.';
+    error.value = err.response?.data?.erro || err.response?.data?.error || 'Decolagem Recusada pelo AeroControl.';
   }
 }
 
@@ -464,12 +496,6 @@ async function stopSimulation() {
   try {
     await axios.post(`${apiBaseUrl}/api/routes/stop`, {
       callsign: activeAircraft.value.callsign
-    });
-
-    kafkaEvents.value.push({
-      ts: new Date().toLocaleTimeString(),
-      topic: 'avionica.simulation.ended',
-      payload: `{"callsign":"${activeAircraft.value.callsign}"}`
     });
 
     simCallsign.value = '';
@@ -482,8 +508,6 @@ async function stopSimulation() {
     error.value = err.response?.data?.erro || 'Erro ao parar simulacao.';
   }
 }
-
-
 
 // Carregar Tudo
 async function loadAll() {
@@ -509,9 +533,11 @@ async function loadAll() {
 onMounted(() => {
   loadAll();
   refreshTimer = window.setInterval(loadAll, 2000);
+  connectToKafkaStream(); // Inicializa a escuta reativa do Kafka via SSE
 });
 
 onUnmounted(() => {
   window.clearInterval(refreshTimer);
+  if (kafkaEventSource) kafkaEventSource.close();
 });
 </script>

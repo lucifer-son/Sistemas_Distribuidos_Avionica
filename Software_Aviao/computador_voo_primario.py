@@ -4,15 +4,17 @@ import threading
 import json
 import random
 
+import os
+
 # Configurações do Broker
-BROKER = "localhost" # Altere para o IP do seu broker MQTT
-PORT = 1883
+BROKER = os.getenv("MQTT_BROKER", "localhost")
+PORT = int(os.getenv("MQTT_PORT", "1883"))
 
 # Tópicos MQTT
 TOPIC_HEALTH = "avionica.module.health"
 TOPIC_KEEPALIVE = "avionica.system.keepalive"
 TOPIC_ELECTION = "avionica.system.election"
-TOPIC_TELEMETRY = "avionica.telemetry.navigation"
+TOPIC_TELEMETRY = "avionica/navegacao"
 
 class FlightComputerNode:
     def __init__(self, node_id):

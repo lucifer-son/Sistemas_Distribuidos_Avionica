@@ -67,36 +67,59 @@
       </div>
 
       <!-- SUBTAB 1: TABELAS -->
-      <div v-if="subTab === 'tables'" class="row g-3">
-        <div v-for="table in tables" :key="table.id" class="col-12 col-md-4 col-lg-3">
-          <div class="card bg-dark border-secondary p-3 h-100 d-flex flex-column justify-content-between">
-            <div>
-              <div class="text-secondary small text-uppercase fw-semibold mb-1">{{ table.id }}</div>
-              <h3 class="h6 text-white fw-bold mb-3">{{ table.displayName }}</h3>
+      <div v-if="subTab === 'tables'">
+        <!-- Barra de métricas TCP do PostgreSQL -->
+        <div v-if="poolStats" class="card bg-dark border-secondary p-3 mb-4">
+          <div class="row g-3 align-items-center text-xs mono">
+            <div class="col-12 col-md-3 text-secondary text-uppercase fw-semibold">
+              Métricas do Pool TCP:
             </div>
-            
-            <div class="d-flex justify-content-between align-items-baseline mt-auto pt-2 border-top border-secondary">
+            <div class="col-4 col-md-3">
+              <span class="text-secondary">Conexões Totais: </span>
+              <span class="text-info fw-bold">{{ poolStats.totalCount }}</span>
+            </div>
+            <div class="col-4 col-md-3">
+              <span class="text-secondary">Conexões Ociosas: </span>
+              <span class="text-success fw-bold">{{ poolStats.idleCount }}</span>
+            </div>
+            <div class="col-4 col-md-3">
+              <span class="text-secondary">Aguardando na Fila: </span>
+              <span class="text-warning fw-bold">{{ poolStats.waitingCount }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div v-for="table in tables" :key="table.id" class="col-12 col-md-4 col-lg-3">
+            <div class="card bg-dark border-secondary p-3 h-100 d-flex flex-column justify-content-between">
               <div>
-                <span class="mono fs-4 fw-bold text-info">{{ table.rowCount }}</span>
-                <span class="text-secondary small ms-1">rows</span>
+                <div class="text-secondary small text-uppercase fw-semibold mb-1">{{ table.id }}</div>
+                <h3 class="h6 text-white fw-bold mb-3">{{ table.displayName }}</h3>
               </div>
               
-              <div class="d-flex gap-2">
-                <button 
-                  @click="selectTable(table.id)" 
-                  class="btn btn-xs btn-outline-info py-1 px-2"
-                  title="Explorar registros"
-                >
-                  🔍
-                </button>
-                <button 
-                  @click="confirmTruncate(table.id)" 
-                  class="btn btn-xs btn-outline-danger py-1 px-2" 
-                  title="Limpar tabela"
-                  :disabled="table.rowCount === 0"
-                >
-                  🗑️
-                </button>
+              <div class="d-flex justify-content-between align-items-baseline mt-auto pt-2 border-top border-secondary">
+                <div>
+                  <span class="mono fs-4 fw-bold text-info">{{ table.rowCount }}</span>
+                  <span class="text-secondary small ms-1">rows</span>
+                </div>
+                
+                <div class="d-flex gap-2">
+                  <button 
+                    @click="selectTable(table.id)" 
+                    class="btn btn-xs btn-outline-info py-1 px-2"
+                    title="Explorar registros"
+                  >
+                    🔍
+                  </button>
+                  <button 
+                    @click="confirmTruncate(table.id)" 
+                    class="btn btn-xs btn-outline-danger py-1 px-2" 
+                    title="Limpar tabela"
+                    :disabled="table.rowCount === 0"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -280,6 +303,14 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Gráfico Causal de Lamport -->
+        <div v-if="causalityReport" class="card bg-dark border-secondary p-4 mt-4">
+          <h4 class="h6 text-white fw-bold mb-3">Gráfico Causal de Lamport (Relógio Lógico vs Tempo Físico de Recebimento)</h4>
+          <div style="position: relative; height: 350px; width: 100%;">
+            <canvas id="causalityChart"></canvas>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -287,7 +318,7 @@
 
 <script setup>
 import axios from 'axios';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch, nextTick } from 'vue';
 
 const props = defineProps({
   apiBaseUrl: {
@@ -302,12 +333,14 @@ const loading = ref(false);
 const autoRefresh = ref(false);
 const localNotification = ref(null);
 let refreshTimer = null;
+let causalityChartInstance = null;
 
 // Dados das APIS
 const tables = ref([]);
 const selectedTable = ref('');
 const tableData = ref({ columns: [], rows: [] });
 const causalityReport = ref(null);
+const poolStats = ref(null);
 
 const filters = ref({
   search: '',
@@ -339,11 +372,110 @@ const fetchCausalityReport = async () => {
     const res = await axios.get(`${props.apiBaseUrl}/api/audit/causality`);
     if (res.data.success || res.status === 200) {
       causalityReport.value = res.data;
+      nextTick(() => {
+        if (res.data.pontos && subTab.value === 'causality') {
+          updateChart(res.data.pontos);
+        }
+      });
     }
   } catch (err) {
     console.error('Falha ao buscar auditoria de Lamport:', err);
   }
 };
+
+const fetchPoolStats = async () => {
+  try {
+    const res = await axios.get(`${props.apiBaseUrl}/api/audit/pool-stats`);
+    if (res.data.success) {
+      poolStats.value = res.data;
+    }
+  } catch (err) {
+    console.error('Falha ao buscar métricas do pool TCP:', err);
+  }
+};
+
+const updateChart = (pontos) => {
+  const canvas = document.getElementById('causalityChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  // Agrupa os pontos por sensor de origem
+  const groups = {};
+  pontos.forEach(p => {
+    if (!groups[p.sensor_origem]) {
+      groups[p.sensor_origem] = [];
+    }
+    groups[p.sensor_origem].push(p);
+  });
+
+  const colors = ['#0dcaf0', '#198754', '#ffc107', '#fd7e14', '#dc3545', '#6f42c1'];
+  let colorIdx = 0;
+
+  const datasets = Object.keys(groups).map(sensor => {
+    const data = groups[sensor].map(p => ({
+      x: new Date(p.recebido_em).toLocaleTimeString('pt-BR'),
+      y: parseInt(p.logical_clock, 10)
+    }));
+
+    const color = colors[colorIdx % colors.length];
+    colorIdx++;
+
+    return {
+      label: sensor,
+      data: data,
+      borderColor: color,
+      backgroundColor: color + '22',
+      borderWidth: 2,
+      tension: 0.1,
+      fill: false
+    };
+  });
+
+  if (causalityChartInstance) {
+    causalityChartInstance.destroy();
+  }
+
+  // Cria a instância do Chart.js
+  causalityChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: { color: '#fff' }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: '#fff' }
+        },
+        y: {
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: '#fff' },
+          title: {
+            display: true,
+            text: 'Relógio Lógico (Lamport)',
+            color: '#fff'
+          }
+        }
+      }
+    }
+  });
+};
+
+watch(subTab, (newTab) => {
+  if (newTab === 'causality' && causalityReport.value && causalityReport.value.pontos) {
+    nextTick(() => {
+      updateChart(causalityReport.value.pontos);
+    });
+  }
+});
 
 const fetchTableData = async () => {
   if (!selectedTable.value) return;
@@ -419,7 +551,8 @@ const reloadData = async () => {
   loading.value = true;
   await Promise.all([
     fetchTables(),
-    fetchCausalityReport()
+    fetchCausalityReport(),
+    fetchPoolStats()
   ]);
   if (selectedTable.value) {
     await fetchTableData();

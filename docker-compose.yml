@@ -336,6 +336,32 @@ services:
       kafka:
         condition: service_started
 
+  flight-computer-primary:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_flight_computer_primary
+    command: python computador_voo_primario.py --id 2
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MQTT_BROKER: mqtt-broker
+      MQTT_PORT: 1883
+    depends_on:
+      - mqtt-broker
+
+  flight-computer-secondary:
+    build:
+      context: ./Software_Aviao
+      dockerfile: docker/Dockerfile
+    container_name: avionica_flight_computer_secondary
+    command: python computador_voo_secundario.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MQTT_BROKER: mqtt-broker
+      MQTT_PORT: 1883
+    depends_on:
+      - mqtt-broker
+
 volumes:
   postgres_data:
   frontend_node_modules:
