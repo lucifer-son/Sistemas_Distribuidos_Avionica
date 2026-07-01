@@ -1,0 +1,74 @@
+{
+  "SBRF": {
+    "nome": "Aeroporto Internacional do Recife",
+    "cidade": "Recife",
+    "latitude": -8.12649,
+    "longitude": -34.9236
+  },
+  "SBSV": {
+    "nome": "Aeroporto Internacional de Salvador",
+    "cidade": "Salvador",
+    "latitude": -12.9086,
+    "longitude": -38.3225
+  },
+  "SBFZ": {
+    "nome": "Aeroporto Internacional de Fortaleza",
+    "cidade": "Fortaleza",
+    "latitude": -3.77628,
+    "longitude": -38.5326
+  },
+  "SBBR": {
+    "nome": "Aeroporto Internacional de Brasília",
+    "cidade": "Brasília",
+    "latitude": -15.8697,
+    "longitude": -47.9208
+  },
+  "SBCF": {
+    "nome": "Aeroporto Internacional de Confins",
+    "cidade": "Belo Horizonte",
+    "latitude": -19.6337,
+    "longitude": -43.9689
+  },
+  "SBGL": {
+    "nome": "Aeroporto Internacional do Galeão",
+    "cidade": "Rio de Janeiro",
+    "latitude": -22.809,
+    "longitude": -43.2506
+  },
+  "SBRJ": {
+    "nome": "Aeroporto Santos Dumont",
+    "cidade": "Rio de Janeiro",
+    "latitude": -22.9105,
+    "longitude": -43.1631
+  },
+  "SBGR": {
+    "nome": "Aeroporto Internacional de Guarulhos",
+    "cidade": "São Paulo",
+    "latitude": -23.4356,
+    "longitude": -46.4731
+  },
+  "SBSP": {
+    "nome": "Aeroporto de Congonhas",
+    "cidade": "São Paulo",
+    "latitude": -23.6261,
+    "longitude": -46.6564
+  },
+  "SBKP": {
+    "nome": "Aeroporto Internacional de Viracopos",
+    "cidade": "Campinas",
+    "latitude": -23.0074,
+    "longitude": -47.1345
+  },
+  "SBCT": {
+    "nome": "Aeroporto Internacional de Curitiba",
+    "cidade": "Curitiba",
+    "latitude": -25.5285,
+    "longitude": -49.1758
+  },
+  "SBPA": {
+    "nome": "Aeroporto Internacional de Porto Alegre",
+    "cidade": "Porto Alegre",
+    "latitude": -29.9944,
+    "longitude": -51.1714
+  }
+}
