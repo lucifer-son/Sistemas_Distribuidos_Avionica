@@ -29,6 +29,7 @@ class FlightManagementSystem:
         self.cache_aeroportos = CacheAeroportosSQLite()
 
         self.rota_atual: dict[str, Any] = {
+            "callsign": "N/A",
             "origem": "N/A",
             "destino": "N/A",
             "distancia_nm": 0.0,
@@ -186,6 +187,7 @@ class FlightManagementSystem:
             self,
             origem: str,
             destino: str,
+            callsign: str = "N/A",
     ) -> dict[str, Any] | None:
         origem = origem.strip().upper()
         destino = destino.strip().upper()
@@ -229,6 +231,7 @@ class FlightManagementSystem:
         )
 
         self.rota_atual = {
+            "callsign": callsign,
             "origem": origem,
             "destino": destino,
             "distancia_nm": round(distancia, 1),
@@ -288,10 +291,13 @@ class FlightManagementSystem:
                 destino = str(
                     pacote.get("destino", "")
                 ).strip().upper()
+                callsign = str(
+                    pacote.get("callsign", "N/A")
+                ).strip().upper()
 
                 threading.Thread(
                     target=self.processar_rota,
-                    args=(origem, destino),
+                    args=(origem, destino, callsign),
                     daemon=True,
                 ).start()
 
@@ -319,6 +325,7 @@ class FlightManagementSystem:
             )
 
         return {
+            "callsign": self.rota_atual.get("callsign", "N/A"),
             "dados": {
                 "rota_texto": (
                     f"{self.rota_atual['origem']} -> "
