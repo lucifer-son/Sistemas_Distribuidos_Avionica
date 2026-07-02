@@ -1,42 +1,84 @@
 package avionica.kafka.consumer;
 
-import avionica.lamport.service.LamportConsumerService;
+import avionica.lamport.model.TelemetriaOrdenada;
+import avionica.lamport.repository.TelemetriaOrdenadaRepository;
+import avionica.telemetry.service.AircraftTelemetryService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class TelemetriaKafkaConsumer {
-    private static final Logger logger = LoggerFactory.getLogger(TelemetriaKafkaConsumer.class);
 
-    private final LamportConsumerService lamportService;
+    private static final Logger log = LoggerFactory.getLogger(TelemetriaKafkaConsumer.class);
 
-    public TelemetriaKafkaConsumer(LamportConsumerService lamportService) {
-        this.lamportService = lamportService;
+    private final TelemetriaOrdenadaRepository repository;
+    private final AircraftTelemetryService telemetryService;
+    private final ObjectMapper mapper;
+    private final AtomicLong logicalClockLocal = new AtomicLong(0);
+
+    public TelemetriaKafkaConsumer(TelemetriaOrdenadaRepository repository,
+                                   AircraftTelemetryService telemetryService,
+                                   ObjectMapper mapper) {
+        this.repository = repository;
+        this.telemetryService = telemetryService;
+        this.mapper = mapper;
     }
 
-    /**
-     * Escuta tópicos de telemetria e delega ao serviço de Lamport antes da persistência.
-     */
     @KafkaListener(
         topics = {
-            "avionica.telemetry.brakes",
             "avionica.telemetry.flight",
+            "avionica.telemetry.brakes",
             "avionica.telemetry.radar",
-            "avionica.telemetry.motor.consolidated",
-            "avionica.navigation",
-            "avionica.telemetry.waic"
+            "avionica.telemetry.waic",
+            "avionica.navigation"
         },
-        groupId = "${app.lamport.group-id:lamport-consumer}"
+        groupId = "lamport-ordered-consumer-group"
     )
-    public void consumir(
-        String mensagem,
-        @Header(KafkaHeaders.RECEIVED_TOPIC) String topico
-    ) {
-        logger.debug("[Kafka] Mensagem recebida no tópico {} para persistência Lamport", topico);
-        lamportService.processar(topico, mensagem);
+    public void consumeTelemetry(
+            @Payload String payloadStr,
+            @Header("kafka_receivedTopic") String topic) {
+
+        if (!telemetryService.isSimulacaoAtiva()) {
+            return;
+        }
+
+        try {
+            var jsonNode = mapper.readTree(payloadStr);
+
+            long clockMensagem = jsonNode.path("logical_clock").asLong(0);
+
+            long clockLocalAtualizado =
+                    logicalClockLocal.updateAndGet(local -> Math.max(local, clockMensagem) + 1);
+
+            String callsign = jsonNode.path("callsign").asText(null);
+            if (callsign == null) {
+                callsign = jsonNode.path("payload").path("callsign").asText("DESCONHECIDO");
+            }
+
+            TelemetriaOrdenada record = TelemetriaOrdenada.builder()
+                    .topicoKafka(topic)
+                    .sensorOrigem(jsonNode.path("source").asText("UNKNOWN"))
+                    .logicalClock(clockLocalAtualizado)
+                    .payloadJson(payloadStr)
+                    .callsign(callsign)
+                    .recebidoEm(Instant.now())
+                    .build();
+
+            repository.save(record);
+
+            log.info("[Lamport] topico={} | clock_mensagem={} | clock_local={} | origem={}",
+                    topic, clockMensagem, clockLocalAtualizado, record.getSensorOrigem());
+
+        } catch (Exception e) {
+            log.error("Erro ao ordenar/persistir telemetria: {}", e.getMessage());
+        }
     }
 }
