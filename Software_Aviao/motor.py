@@ -11,7 +11,7 @@ except Exception as e:
     KafkaConsumer = None
     _kafka_import_error = e
 
-# --- Configuration ---
+# --- Configuração ---
 MOTOR_ID = os.getenv('MOTOR_ID', 'A').lower()
 KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'kafka:9092')
 TELEMETRY_TOPIC = f'avionica.telemetry.motor.{MOTOR_ID}'
@@ -183,4 +183,3 @@ if __name__ == "__main__":
             kafka_producer.close()
         except Exception:
             pass
-
